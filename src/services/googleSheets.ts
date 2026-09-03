@@ -2,16 +2,16 @@
  * Google Sheets transport.
  *
  * Topology:
- *   Frontend (GitHub Pages) ──HTTPS──▶ Google Apps Script Web App ──▶ Google Sheet
+ *   Frontend (GitHub Pages) ──HTTPS──▶ Cloudflare Worker ──Google Sheets REST──▶ Google Sheet
  *
- * The Sheet is the database. A Google Apps Script Web App (the deployable
- * backend lives in `backend/Code.gs` at the repo root) exposes it as a tiny
- * JSON RPC API, so end users never need Google sign-in (README §2). The
+ * The Sheet is the database. A Cloudflare Worker (`backend/worker.js`, pure
+ * fetch + Web Crypto, no Node.js) exposes it as a tiny JSON RPC API using a
+ * service account, so end users never need Google sign-in (README §2). The
  * browser posts `{action, payload}` and receives the same view-models the
  * local engine returns.
  *
- * `rpc` uses `Content-Type: text/plain` deliberately: it avoids a CORS
- * preflight (OPTIONS) that Apps Script cannot answer.
+ * `rpc` uses `Content-Type: text/plain` deliberately: it makes the request
+ * "simple", so no CORS preflight is needed at all.
  */
 
 import type { Challenge, User } from "../types";
@@ -28,18 +28,20 @@ import type {
 /* ------------------------------------------------------------------ */
 
 /**
- * ⬇ PASTE YOUR GOOGLE APPS SCRIPT WEB APP URL HERE ⬇
+ * ⬇ PASTE YOUR CLOUDFLARE WORKER URL HERE ⬇
  *
- * It is the /exec URL you get from Apps Script ▸ Deploy ▸ Web app, e.g.
- *   "https://script.google.com/macros/s/AKfycbx1234…/exec"
+ * The URL you get after `npx wrangler deploy backend/worker.js`, e.g.
+ *   "https://challengemate.your-subdomain.workers.dev"
  *
- * Leave it empty ("") to run the built-in local demo engine instead.
- * Full step-by-step guide: README / deployment docs of this repository.
+ * While this is empty, the app runs the built-in local demo engine and
+ * stores data in the browser — set the URL to make Google Sheets (via the
+ * Worker) the real database. Only the login session is ever stored locally.
  */
 export const SHEETS_API_URL = "";
 
 export function isSheetsConfigured(): boolean {
-  return /^https:\/\/script\.google(?:usercontent)?\.com\/.+\/exec$/.test(SHEETS_API_URL.trim());
+  // any deployed worker / API endpoint over https counts as configured
+  return /^https:\/\/.+\..+/.test(SHEETS_API_URL.trim());
 }
 
 /* ------------------------------------------------------------------ */

@@ -3,9 +3,9 @@
  *
  * Production topology:
  *
- *   Frontend (GitHub Pages) ──HTTPS──▶ Google Apps Script Web App ──▶ Google Sheet
+ *   Frontend (GitHub Pages) ──HTTPS──▶ Cloudflare Worker ──Sheets REST API──▶ Google Sheet
  *
- * The Web App URL is hardcoded in ./googleSheets (SHEETS_API_URL). When it is
+ * The Worker URL is hardcoded in ./googleSheets (SHEETS_API_URL). When it is
  * set, every method below is served straight from the Google Sheet via
  * `sheetsApi`. With no URL configured, a deterministic local engine — same
  * contract, in-browser persistence — keeps the app fully functional as a demo.
@@ -788,18 +788,67 @@ const localApi = {
 };
 
 /* ------------------------------------------------------------------ */
-/* facade — routes every call to the Google Sheet when SHEETS_API_URL  */
-/* (hardcoded in ./googleSheets) is set; otherwise the local engine    */
-/* above keeps the app fully functional offline.                       */
+/* facade — routes every call to the Google Sheet (via the Worker)     */
+/* when SHEETS_API_URL is set in ./googleSheets; otherwise the local   */
+/* engine above keeps the app fully functional offline.                */
+/*                                                                     */
+/* Storage contract: the login SESSION is the only thing kept in the   */
+/* browser. All main data (users, challenges, tasks, penalties…) lives */
+/* in the Google Sheet and is never cached locally.                    */
 /* ------------------------------------------------------------------ */
+
+const SESSION_USER_KEY = "challengemate_session_user_v1";
+
+function persistSession(u: User) {
+  localStorage.setItem(SESSION_KEY, u.user_id);
+  localStorage.setItem(
+    SESSION_USER_KEY,
+    JSON.stringify({ user_id: u.user_id, username: u.username, password: "", created_at: u.created_at }),
+  );
+  // never keep main data in the browser once the Sheet is the source of truth
+  if (isSheetsConfigured()) localStorage.removeItem(DB_KEY);
+}
+
+function clearSession() {
+  localStorage.removeItem(SESSION_KEY);
+  localStorage.removeItem(SESSION_USER_KEY);
+}
+
+function storedSessionUser(): User | null {
+  try {
+    const raw = localStorage.getItem(SESSION_USER_KEY);
+    if (raw) return JSON.parse(raw) as User;
+  } catch {
+    /* corrupted session → treat as logged out */
+  }
+  // legacy demo sessions only stored an id — resolve it against the local DB
+  const id = localStorage.getItem(SESSION_KEY);
+  if (!id) return null;
+  return loadDB().users.find((u) => u.user_id === id) ?? null;
+}
 
 export const api = new Proxy(localApi, {
   get(target, prop: string) {
-    // connection status reflects the hardcoded Sheets URL
+    // connection status reflects the hardcoded backend URL
     if (prop === "workerConfigured") return isSheetsConfigured();
     if (prop === "workerUrl") return SHEETS_API_URL.trim() || null;
-    // session stays client-side; everything else goes to the Sheet
-    if (isSheetsConfigured() && prop !== "sessionUser" && prop !== "logout" && prop !== "resetDemo" && prop in sheetsApi) {
+
+    // --- session lives in the browser, everything else lives in the Sheet ---
+    if (prop === "sessionUser") return storedSessionUser;
+    if (prop === "logout") return clearSession;
+    if (prop === "login" || prop === "register") {
+      const fn =
+        isSheetsConfigured() && prop in sheetsApi
+          ? (sheetsApi as unknown as Record<string, (a: string, b: string) => Promise<User>>)[prop]
+          : (target as unknown as Record<string, (a: string, b: string) => Promise<User>>)[prop];
+      return async (username: string, password: string) => {
+        const u = await fn(username, password);
+        persistSession(u);
+        return u;
+      };
+    }
+
+    if (isSheetsConfigured() && prop !== "resetDemo" && prop in sheetsApi) {
       return (sheetsApi as unknown as Record<string, unknown>)[prop];
     }
     return (target as unknown as Record<string, unknown>)[prop];

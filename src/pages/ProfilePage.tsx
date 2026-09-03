@@ -254,8 +254,8 @@ export default function ProfilePage({ user, onLogout }: { user: User; onLogout: 
             </p>
             <p className="mt-1.5 text-[12px] leading-relaxed text-bone-600">
               {api.workerConfigured
-                ? "Every account, challenge, task, streak and penalty is stored in the connected Google Sheet through Apps Script."
-                : "The Google Sheet endpoint is hardcoded in src/services/googleSheets.ts → SHEETS_API_URL. Paste your Apps Script /exec URL there and rebuild to go live."}
+                ? "Every account, challenge, task, streak and penalty is stored in the connected Google Sheet through the Cloudflare Worker. Only your login session is kept in this browser."
+                : "The backend endpoint is hardcoded in src/services/googleSheets.ts → SHEETS_API_URL. Paste your Cloudflare Worker URL there and rebuild to go live. Until then, demo data stays in this browser."}
             </p>
             <p className="mt-2 truncate rounded-lg border border-ink-700 bg-ink-950 px-2.5 py-1.5 font-mono text-[10.5px] text-bone-500">
               {api.workerUrl ?? "SHEETS_API_URL = \"\""}
