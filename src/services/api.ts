@@ -30,6 +30,14 @@ import type {
   User,
 } from "../types";
 import { buildSeedDB } from "../data/seed";
+import {
+  APPS_SCRIPT_CODE,
+  getSheetsConfig,
+  isSheetsConfigured,
+  setSheetsConfig,
+  sheetsApi,
+  testSheetsConnection,
+} from "./googleSheets";
 import { ACHIEVEMENTS, type AchievementDef } from "../data/achievements";
 import { randomQuote } from "../data/quotes";
 import { computeStats, statusFor } from "../utils/streak";
@@ -294,7 +302,7 @@ export interface ProfileData {
 /* public API                                                          */
 /* ------------------------------------------------------------------ */
 
-export const api = {
+const localApi = {
   /* ---------- auth ---------- */
 
   async login(username: string, password: string): Promise<User> {
@@ -766,6 +774,42 @@ export const api = {
 
   workerConfigured: WORKER_URL !== null,
   workerUrl: WORKER_URL,
+};
+
+/* ------------------------------------------------------------------ */
+/* facade — routes every call to Google Sheets when an Apps Script     */
+/* Web App URL is configured (Profile ▸ Data source); otherwise the    */
+/* local engine above keeps the app fully functional offline.          */
+/* ------------------------------------------------------------------ */
+
+export const api = new Proxy(localApi, {
+  get(target, prop: string) {
+    if (prop === "sheetsConfig") {
+      return {
+        get: getSheetsConfig,
+        set: setSheetsConfig,
+        test: testSheetsConnection,
+        isConfigured: isSheetsConfigured,
+        code: APPS_SCRIPT_CODE,
+      };
+    }
+    // connection status now reflects the Sheets link, not an env var
+    if (prop === "workerConfigured") return isSheetsConfigured();
+    if (prop === "workerUrl") return getSheetsConfig().url || null;
+    // session stays client-side; everything else goes to the Sheet
+    if (isSheetsConfigured() && prop !== "sessionUser" && prop !== "logout" && prop !== "resetDemo" && prop in sheetsApi) {
+      return (sheetsApi as unknown as Record<string, unknown>)[prop];
+    }
+    return (target as unknown as Record<string, unknown>)[prop];
+  },
+}) as typeof localApi & {
+  sheetsConfig: {
+    get: typeof getSheetsConfig;
+    set: typeof setSheetsConfig;
+    test: typeof testSheetsConnection;
+    isConfigured: typeof isSheetsConfigured;
+    code: string;
+  };
 };
 
 export type { Challenge, Member, TaskStatus, User };
