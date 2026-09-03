@@ -261,7 +261,7 @@ export default function ProfilePage({ user, onLogout }: { user: User; onLogout: 
               {api.workerUrl ?? "SHEETS_API_URL = \"\""}
             </p>
             <p className="mt-2 text-[11px] font-semibold text-bone-600">
-              Backend to paste into Apps Script: <span className="font-mono text-bone-400">backend/Code.gs</span> in this repo.
+              Backend: <span className="font-mono text-bone-400">backend/worker.js</span> in this repo, deployed to Cloudflare Workers.
             </p>
           </div>
         </section>
