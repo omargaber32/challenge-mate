@@ -67,6 +67,19 @@ export default function ChallengeDetailPage({
     }
   };
 
+  const decrease = async () => {
+    setBusy(true);
+    try {
+      await api.decreasePenalty(user.user_id, challengeId);
+      toast.push(`Penalty decreased by ${data?.challenge.penalty_points ?? 1} pt — history updated`);
+      load();
+    } catch (ex) {
+      toast.push(ex instanceof Error ? ex.message : "Could not decrease penalty.", "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!data) {
     return (
       <div className={`${cardCls} animate-pulse p-5`}>
@@ -267,11 +280,21 @@ export default function ChallengeDetailPage({
       {data.member && (
         <Reveal delay={240}>
           <section className={`${cardCls} p-5`}>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3">
               <h2 className="font-display text-lg font-extrabold text-bone-100">Penalty history</h2>
-              <span className={`font-display text-2xl font-extrabold ${data.penalties.balance > 0 ? "text-coral-300" : "text-leaf-300"}`}>
-                {data.penalties.balance} pt{data.penalties.balance === 1 ? "" : "s"}
-              </span>
+              <div className="flex items-center gap-2.5">
+                <span className={`font-display text-2xl font-extrabold ${data.penalties.balance > 0 ? "text-coral-300" : "text-leaf-300"}`}>
+                  {data.penalties.balance} pt{data.penalties.balance === 1 ? "" : "s"}
+                </span>
+                <button
+                  onClick={decrease}
+                  disabled={busy || data.penalties.balance === 0}
+                  title="Decrease your penalty balance by one step"
+                  className="rounded-[10px] border border-coral-500/45 bg-coral-500/10 px-3 py-1.5 text-[11.5px] font-extrabold text-coral-300 transition hover:border-coral-400/70 hover:bg-coral-500/20 active:scale-95 disabled:pointer-events-none disabled:opacity-35"
+                >
+                  − Decrease
+                </button>
+              </div>
             </div>
             {data.penalties.events.length === 0 ? (
               <p className="mt-3 text-sm font-semibold text-bone-600">Clean sheet — no penalties so far. 🎯</p>
@@ -298,7 +321,8 @@ export default function ChallengeDetailPage({
               </div>
             )}
             <p className="mt-3 text-[11.5px] leading-relaxed text-bone-600">
-              Removals are kept as −point events so the history stays honest (README §14).
+              Use <strong className="text-coral-300/90">− Decrease</strong> to lower your balance, or forgive a specific
+              missed day. Every reduction is kept as a −point event so the history stays honest (README §14).
             </p>
           </section>
         </Reveal>

@@ -1,15 +1,14 @@
 /**
  * ChallengeMate API layer.
  *
- * Production topology (README §24):
+ * Production topology:
  *
- *   Frontend (GitHub Pages) ──HTTPS──▶ Cloudflare Worker ──▶ Google Sheets
+ *   Frontend (GitHub Pages) ──HTTPS──▶ Google Apps Script Web App ──▶ Google Sheet
  *
- * Every method below maps 1:1 to a Worker route. Set `VITE_WORKER_URL`
- * (e.g. https://challengemate-api.<you>.workers.dev) and each method
- * switches from the local demo engine to `workerFetch`. Until then a
- * deterministic local engine — same contract, localStorage persistence,
- * simulated network latency — powers the app so every flow is testable.
+ * The Web App URL is hardcoded in ./googleSheets (SHEETS_API_URL). When it is
+ * set, every method below is served straight from the Google Sheet via
+ * `sheetsApi`. With no URL configured, a deterministic local engine — same
+ * contract, in-browser persistence — keeps the app fully functional as a demo.
  *
  *   POST /login              POST /register           POST /home
  *   POST /challenges         POST /challenge/detail   POST /challenge/create
@@ -30,14 +29,7 @@ import type {
   User,
 } from "../types";
 import { buildSeedDB } from "../data/seed";
-import {
-  APPS_SCRIPT_CODE,
-  getSheetsConfig,
-  isSheetsConfigured,
-  setSheetsConfig,
-  sheetsApi,
-  testSheetsConnection,
-} from "./googleSheets";
+import { SHEETS_API_URL, isSheetsConfigured, sheetsApi } from "./googleSheets";
 import { ACHIEVEMENTS, type AchievementDef } from "../data/achievements";
 import { randomQuote } from "../data/quotes";
 import { computeStats, statusFor } from "../utils/streak";
@@ -755,6 +747,25 @@ const localApi = {
     persist(db);
   },
 
+  /** lower the penalty balance by one penalty-step; logged as a −points event (README §14) */
+  async decreasePenalty(userId: string, challengeId: string): Promise<void> {
+    if (WORKER_URL) return workerFetch("/penalty/decrease", { userId, challengeId });
+    await lag();
+    const db = loadDB();
+    const ch = challengeById(db, challengeId);
+    const balance = penaltyBalance(db, ch, userId);
+    if (balance <= 0) throw new Error("Penalty balance is already zero.");
+    db.penaltyRemovals.push({
+      removal_id: `pr_${Date.now().toString(36)}`,
+      challenge_id: challengeId,
+      user_id: userId,
+      date: todayKey(),
+      points: Math.min(ch.penalty_points, balance),
+      created_at: todayKey(),
+    });
+    persist(db);
+  },
+
   /** directory of registered users (for invite lists) */
   async listUsers(excludeId?: string): Promise<Pick<User, "user_id" | "username">[]> {
     if (WORKER_URL) return workerFetch("/users", { excludeId });
@@ -777,40 +788,23 @@ const localApi = {
 };
 
 /* ------------------------------------------------------------------ */
-/* facade — routes every call to Google Sheets when an Apps Script     */
-/* Web App URL is configured (Profile ▸ Data source); otherwise the    */
-/* local engine above keeps the app fully functional offline.          */
+/* facade — routes every call to the Google Sheet when SHEETS_API_URL  */
+/* (hardcoded in ./googleSheets) is set; otherwise the local engine    */
+/* above keeps the app fully functional offline.                       */
 /* ------------------------------------------------------------------ */
 
 export const api = new Proxy(localApi, {
   get(target, prop: string) {
-    if (prop === "sheetsConfig") {
-      return {
-        get: getSheetsConfig,
-        set: setSheetsConfig,
-        test: testSheetsConnection,
-        isConfigured: isSheetsConfigured,
-        code: APPS_SCRIPT_CODE,
-      };
-    }
-    // connection status now reflects the Sheets link, not an env var
+    // connection status reflects the hardcoded Sheets URL
     if (prop === "workerConfigured") return isSheetsConfigured();
-    if (prop === "workerUrl") return getSheetsConfig().url || null;
+    if (prop === "workerUrl") return SHEETS_API_URL.trim() || null;
     // session stays client-side; everything else goes to the Sheet
     if (isSheetsConfigured() && prop !== "sessionUser" && prop !== "logout" && prop !== "resetDemo" && prop in sheetsApi) {
       return (sheetsApi as unknown as Record<string, unknown>)[prop];
     }
     return (target as unknown as Record<string, unknown>)[prop];
   },
-}) as typeof localApi & {
-  sheetsConfig: {
-    get: typeof getSheetsConfig;
-    set: typeof setSheetsConfig;
-    test: typeof testSheetsConnection;
-    isConfigured: typeof isSheetsConfigured;
-    code: string;
-  };
-};
+}) as typeof localApi;
 
 export type { Challenge, Member, TaskStatus, User };
 export { isoWeekOf };

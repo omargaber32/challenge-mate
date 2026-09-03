@@ -322,9 +322,16 @@ export default function HomePage({
                   : "No live challenges yet"}
             </span>
             {data.totalPenalties > 0 && (
-              <span className="rounded-full border border-coral-500/40 bg-coral-500/10 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-coral-300">
-                {data.totalPenalties} penalty pts
-              </span>
+              <button
+                onClick={() => {
+                  const withPenalty = data.tasks.find((t) => t.penalties > 0);
+                  if (withPenalty) onOpenChallenge(withPenalty.challenge.challenge_id);
+                }}
+                title="Open the challenge to decrease penalties"
+                className="rounded-full border border-coral-500/40 bg-coral-500/10 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-wider text-coral-300 transition hover:border-coral-400/70 hover:bg-coral-500/20 active:scale-95"
+              >
+                {data.totalPenalties} penalty pts · manage
+              </button>
             )}
           </div>
         </Reveal>

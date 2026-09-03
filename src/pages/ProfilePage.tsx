@@ -24,103 +24,6 @@ function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
   );
 }
 
-function DataSourceCard() {
-  const toast = useToast();
-  const [url, setUrl] = useState(api.sheetsConfig.get().url);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
-  const [showCode, setShowCode] = useState(false);
-  const [copied, setCopied] = useState(false);
-
-  const connected = api.sheetsConfig.isConfigured();
-
-  const save = async (turnOn: boolean) => {
-    api.sheetsConfig.set(url, turnOn);
-    if (turnOn) {
-      setTesting(true);
-      const r = await api.sheetsConfig.test(url);
-      setTestResult(r);
-      setTesting(false);
-      toast.push(r.ok ? r.message : "Saved, but the connection test failed.", r.ok ? "success" : "warn");
-    } else {
-      setTestResult(null);
-      toast.push("Switched to local demo mode.", "info");
-    }
-  };
-
-  const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(api.sheetsConfig.code);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1600);
-    } catch {
-      toast.push("Copy failed — select the code manually.", "warn");
-    }
-  };
-
-  return (
-    <section className={`${cardCls} p-5`}>
-      <h2 className="font-display text-lg font-extrabold text-bone-100">Data source</h2>
-      <div className="mt-3 rounded-[12px] border border-ink-600 bg-ink-900 px-3.5 py-3">
-        <p className="flex items-center gap-2 text-[13px] font-bold text-bone-100">
-          <span className={`h-2 w-2 rounded-full ${connected ? "bg-leaf-400" : "bg-gold-400"}`} />
-          {connected ? "Google Sheets · live" : "Local demo · in-browser"}
-        </p>
-        <p className="mt-1.5 text-[12px] leading-relaxed text-bone-600">
-          GitHub Pages ▸ Google Apps Script Web App ▸ your Google Sheet. Paste the Web App URL to store every account,
-          challenge, task, streak and penalty in the Sheet itself.
-        </p>
-      </div>
-
-      <div className="mt-3 space-y-3">
-        <Field label="Apps Script Web App URL" hint="ends in /exec">
-          <input
-            className={inputCls}
-            placeholder="https://script.google.com/macros/s/…/exec"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-          />
-        </Field>
-        {testResult && (
-          <p
-            className={`rounded-[10px] border px-3 py-2 text-[12.5px] font-semibold ${
-              testResult.ok
-                ? "border-leaf-500/40 bg-leaf-500/10 text-leaf-300"
-                : "border-coral-500/40 bg-coral-500/10 text-coral-300"
-            }`}
-          >
-            {testResult.message}
-          </p>
-        )}
-        <div className="grid grid-cols-2 gap-2.5">
-          <button className={btnSolid} disabled={testing || !url.trim()} onClick={() => save(true)}>
-            {testing ? "Testing…" : "Connect sheet"}
-          </button>
-          <button className={btnGhost} disabled={testing} onClick={() => save(false)}>
-            Use demo mode
-          </button>
-        </div>
-        <button className={`${btnGhost} w-full`} onClick={() => setShowCode((v) => !v)}>
-          {showCode ? "Hide backend code" : "View backend code (Code.gs)"}
-        </button>
-        {showCode && (
-          <div className="relative">
-            <button
-              onClick={copy}
-              className="absolute right-2 top-2 z-10 rounded-lg border border-ink-500 bg-ink-800 px-2.5 py-1 text-[11px] font-bold text-bone-300 transition hover:border-ember-400/60 hover:text-ember-300"
-            >
-              {copied ? "Copied ✓" : "Copy"}
-            </button>
-            <pre className="max-h-64 overflow-auto rounded-[12px] border border-ink-600 bg-ink-950 p-3.5 text-[10.5px] leading-relaxed text-bone-500">
-              <code>{api.sheetsConfig.code}</code>
-            </pre>
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
 export default function ProfilePage({ user, onLogout }: { user: User; onLogout: () => void }) {
   const toast = useToast();
   const [data, setData] = useState<ProfileData | null>(null);
@@ -340,9 +243,28 @@ export default function ProfilePage({ user, onLogout }: { user: User; onLogout: 
         </section>
       </Reveal>
 
-      {/* data source (Google Sheets) */}
+      {/* data source — the Sheet URL lives in frontend code, not in the app */}
       <Reveal delay={200}>
-        <DataSourceCard />
+        <section className={`${cardCls} p-5`}>
+          <h2 className="font-display text-lg font-extrabold text-bone-100">Data source</h2>
+          <div className="mt-3 rounded-[12px] border border-ink-600 bg-ink-900 px-3.5 py-3">
+            <p className="flex items-center gap-2 text-[13px] font-bold text-bone-100">
+              <span className={`h-2 w-2 rounded-full ${api.workerConfigured ? "bg-leaf-400" : "bg-gold-400"}`} />
+              {api.workerConfigured ? "Google Sheets · live" : "Local demo · in-browser"}
+            </p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-bone-600">
+              {api.workerConfigured
+                ? "Every account, challenge, task, streak and penalty is stored in the connected Google Sheet through Apps Script."
+                : "The Google Sheet endpoint is hardcoded in src/services/googleSheets.ts → SHEETS_API_URL. Paste your Apps Script /exec URL there and rebuild to go live."}
+            </p>
+            <p className="mt-2 truncate rounded-lg border border-ink-700 bg-ink-950 px-2.5 py-1.5 font-mono text-[10.5px] text-bone-500">
+              {api.workerUrl ?? "SHEETS_API_URL = \"\""}
+            </p>
+            <p className="mt-2 text-[11px] font-semibold text-bone-600">
+              Backend to paste into Apps Script: <span className="font-mono text-bone-400">backend/Code.gs</span> in this repo.
+            </p>
+          </div>
+        </section>
       </Reveal>
 
       {/* session */}

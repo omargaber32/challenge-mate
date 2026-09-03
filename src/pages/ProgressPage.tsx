@@ -92,13 +92,6 @@ export default function ProgressPage({ user }: { user: User }) {
   const today = todayKey();
   const s = data?.stats;
 
-  const METRICS: { label: string; get: (r: NonNullable<typeof data>["friends"][number]) => string | number }[] = [
-    { label: "Completion", get: (r) => `${r.completionPct}%` },
-    { label: "Streak", get: (r) => r.streak },
-    { label: "Best", get: (r) => r.best },
-    { label: "Penalties", get: (r) => r.penalties },
-  ];
-
   return (
     <div className="space-y-5">
       <header className="pt-1">
@@ -240,32 +233,53 @@ export default function ProgressPage({ user }: { user: User }) {
               {data.friends.length <= 1 ? (
                 <p className="mt-4 text-sm font-semibold text-bone-600">No visible friends in this challenge yet.</p>
               ) : (
-                <div className="mt-4 overflow-x-auto">
-                  <table className="w-full min-w-[320px] border-collapse text-sm">
-                    <thead>
-                      <tr>
-                        <th className="pb-2 text-left text-[10px] font-bold uppercase tracking-[0.14em] text-bone-600">{data.challenge.name}</th>
-                        {data.friends.map((f) => (
-                          <th key={f.user_id} className={`pb-2 text-right text-[12px] font-extrabold capitalize ${f.isYou ? "text-ember-300" : "text-bone-300"}`}>
-                            {f.username}
-                            {f.isYou && <span className="block text-[9px] font-bold uppercase tracking-wider text-ember-400/70">you</span>}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {METRICS.map((m) => (
-                        <tr key={m.label} className="border-t border-ink-700">
-                          <td className="py-2.5 text-[12px] font-bold text-bone-500">{m.label}</td>
-                          {data.friends.map((f) => (
-                            <td key={f.user_id} className={`font-display py-2.5 text-right text-[15px] font-extrabold ${f.isYou ? "text-ember-300" : "text-bone-100"}`}>
-                              {m.get(f)}
-                            </td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                <div className="mt-4 space-y-2">
+                  <div className="grid grid-cols-[minmax(0,1fr)_3.2rem_3rem_3rem_2.6rem] items-center gap-2 px-3 text-[9.5px] font-bold uppercase tracking-[0.14em] text-bone-600">
+                    <span>Friend</span>
+                    <span className="text-right">Done</span>
+                    <span className="text-right">Streak</span>
+                    <span className="text-right">Best</span>
+                    <span className="text-right">Pen.</span>
+                  </div>
+                  {data.friends.map((f, i) => (
+                    <div
+                      key={f.user_id}
+                      className={`grid grid-cols-[minmax(0,1fr)_3.2rem_3rem_3rem_2.6rem] items-center gap-2 rounded-[13px] border px-3 py-2.5 transition-all duration-200 hover:-translate-y-px ${
+                        f.isYou ? "border-ember-400/50 bg-ember-500/8" : "border-ink-600 bg-ink-900 hover:border-ink-500"
+                      }`}
+                      style={{ animation: "fade-in 0.45s ease both", animationDelay: `${i * 60}ms` }}
+                    >
+                      <div className="min-w-0">
+                        <p className={`flex items-center gap-2 truncate text-sm font-bold capitalize ${f.isYou ? "text-ember-300" : "text-bone-100"}`}>
+                          <span
+                            className={`font-display flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-extrabold uppercase ${
+                              f.isYou ? "border-ember-400/60 bg-ember-500/15 text-ember-300" : "border-ink-500 bg-ink-800 text-bone-400"
+                            }`}
+                          >
+                            {f.username.slice(0, 1)}
+                          </span>
+                          <span className="truncate">{f.username}</span>
+                          {f.isYou && (
+                            <span className="shrink-0 rounded-full bg-ember-500/15 px-1.5 py-0.5 text-[8.5px] font-extrabold uppercase tracking-wider text-ember-300">
+                              you
+                            </span>
+                          )}
+                        </p>
+                        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-ink-700">
+                          <div
+                            className="h-full rounded-full bg-gradient-to-r from-leaf-600 to-leaf-400 transition-all duration-700"
+                            style={{ width: `${f.completionPct}%` }}
+                          />
+                        </div>
+                      </div>
+                      <span className="text-right font-display text-[14px] font-extrabold text-leaf-300">{f.completionPct}%</span>
+                      <span className="text-right font-display text-[14px] font-extrabold text-ember-300">{f.streak}</span>
+                      <span className="text-right font-display text-[14px] font-extrabold text-gold-300">{f.best}</span>
+                      <span className={`text-right font-display text-[14px] font-extrabold ${f.penalties > 0 ? "text-coral-300" : "text-bone-500"}`}>
+                        {f.penalties}
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </section>
