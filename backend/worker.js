@@ -131,9 +131,19 @@ function invalidate_() {
 async function snapshot_() {
   if (snapshotCache_.data && Date.now() - snapshotCache_.t < SNAPSHOT_TTL) return snapshotCache_.data;
 
-  const ranges = SHEET_NAMES.map((n) => encodeURIComponent(n)).join("&ranges=");
-  const j = await sheets_("/values:batchGet?majorDimension=ROWS&ranges=" + ranges);
-  const valueRanges = j.valueRanges || [];
+  // Only request tabs that actually exist — batchGet 404s the ENTIRE request
+  // if any range points at a missing tab (e.g. Invites/Announcements on an
+  // older sheet before ensureSchema_ has run). meta_() is cached, so this is free.
+  const meta = await meta_();
+  const have = new Set(meta.sheets.map((s) => s.properties.title));
+  const existing = SHEET_NAMES.filter((n) => have.has(n));
+
+  let valueRanges = [];
+  if (existing.length) {
+    const ranges = existing.map((n) => encodeURIComponent(n)).join("&ranges=");
+    const j = await sheets_("/values:batchGet?majorDimension=ROWS&ranges=" + ranges);
+    valueRanges = j.valueRanges || [];
+  }
 
   // Match by returned range name (Sheets omits empty tabs, so index matching is unsafe)
   const byRange = {};
@@ -205,9 +215,35 @@ async function ensureSchema_() {
     metaCache.data = null;
     schemaChanged = true;
   }
+  // Read every existing tab's header row in ONE batched call (not 13 sequential reads)
+  const existingNow = SHEET_NAMES.filter((n) => (metaCache.data || meta).sheets.some((s) => s.properties.title === n));
+  const headersByTab = {};
+  if (existingNow.length) {
+    try {
+      const hr = await sheets_(
+        "/values:batchGet?majorDimension=ROWS&ranges=" +
+          existingNow.map((n) => encodeURIComponent(n + "!1:1")).join("&ranges="),
+      );
+      (hr.valueRanges || []).forEach((vr) => {
+        const tab = String(vr.range || "").split("!")[0].replace(/^'|'$/g, "");
+        headersByTab[tab] = (vr.values || [])[0] || [];
+      });
+    } catch (_) { /* fall through — each tab is handled defensively below */ }
+  }
+
   for (const n of SHEET_NAMES) {
-    const raw = await sheets_("/values/" + encodeURIComponent(n + "!1:1"));
-    const headRow = (raw.values || [])[0] || [];
+    let headRow = headersByTab[n] || [];
+    if (!headersByTab[n] && existingNow.includes(n)) {
+      // tab vanished mid-flight (or stale meta) → recreate; ignore "already exists"
+      try {
+        await sheets_(":batchUpdate", {
+          method: "POST",
+          body: JSON.stringify({ requests: [{ addSheet: { properties: { title: n } } }] }),
+        });
+      } catch (__) { /* already exists — fine */ }
+      metaCache.data = null;
+      schemaChanged = true;
+    }
     if (!headRow.length) {
       // brand-new tab → write the header row
       await sheets_("/values/" + encodeURIComponent(n + "!A1") + "?valueInputOption=RAW", {
