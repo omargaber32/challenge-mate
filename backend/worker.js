@@ -108,13 +108,61 @@ async function meta_() {
   return metaCache.data;
 }
 
-const readCache = {};
+/*
+ * ── Optimized read layer ─────────────────────────────────────────────
+ * Instead of one HTTP round-trip per table (13+ sequential calls that
+ * make Home crawl), we pull EVERY tab in ONE `values:batchGet` request,
+ * parse it in memory, and cache it for a few seconds. Every write
+ * invalidates the cache so the next request sees fresh data.
+ *
+ *   Before: home = 13 tab reads + N challenge reads + N stat reads ≈ 15–40 calls
+ *   After : home = 1 batchGet + in-memory math                     ≈ 1 call
+ */
+
+let snapshotCache_ = { t: 0, data: null };
+const SNAPSHOT_TTL = 4000; // 4s — snappy, yet safe across a burst of writes
+
 function invalidate_() {
-  for (const k of Object.keys(readCache)) delete readCache[k];
+  snapshotCache_.data = null;
+  snapshotCache_.t = 0;
 }
-async function getValues_(range) {
-  const j = await sheets_("/values/" + encodeURIComponent(range));
-  return j.values || [];
+
+/** Fetch + parse ALL tables in a single batched Sheets call (cached). */
+async function snapshot_() {
+  if (snapshotCache_.data && Date.now() - snapshotCache_.t < SNAPSHOT_TTL) return snapshotCache_.data;
+
+  const ranges = SHEET_NAMES.map((n) => encodeURIComponent(n)).join("&ranges=");
+  const j = await sheets_("/values:batchGet?majorDimension=ROWS&ranges=" + ranges);
+  const valueRanges = j.valueRanges || [];
+
+  // Match by returned range name (Sheets omits empty tabs, so index matching is unsafe)
+  const byRange = {};
+  valueRanges.forEach((vr) => {
+    const tab = String(vr.range || "").split("!")[0].replace(/^'|'$/g, "");
+    byRange[tab] = vr.values || [];
+  });
+
+  const db = {};
+  SHEET_NAMES.forEach((name) => {
+    const vals = byRange[name] || [];
+    const head = HEADERS[name];
+    const out = [];
+    for (let i = 1; i < vals.length; i++) {
+      const r = {};
+      for (let c = 0; c < head.length; c++) r[head[c]] = normCell_(head[c], vals[i][c]);
+      if (r[head[0]] !== "" && r[head[0]] != null) out.push(r);
+    }
+    db[name] = out;
+  });
+
+  snapshotCache_ = { t: Date.now(), data: db };
+  return db;
+}
+
+/** In-memory table lookup against the cached snapshot. */
+async function table_(name) {
+  const db = await snapshot_();
+  return db[name] || [];
 }
 
 /* ------------------------------------------------------------------ */
@@ -148,21 +196,25 @@ async function ensureSchema_() {
   const meta = await meta_();
   const have = new Set(meta.sheets.map((s) => s.properties.title));
   const missing = SHEET_NAMES.filter((n) => !have.has(n));
+  let schemaChanged = false;
   if (missing.length) {
     await sheets_(":batchUpdate", {
       method: "POST",
       body: JSON.stringify({ requests: missing.map((n) => ({ addSheet: { properties: { title: n } } })) }),
     });
     metaCache.data = null;
+    schemaChanged = true;
   }
   for (const n of SHEET_NAMES) {
-    const headRow = (await getValues_(n + "!1:1"))[0] || [];
+    const raw = await sheets_("/values/" + encodeURIComponent(n + "!1:1"));
+    const headRow = (raw.values || [])[0] || [];
     if (!headRow.length) {
       // brand-new tab → write the header row
       await sheets_("/values/" + encodeURIComponent(n + "!A1") + "?valueInputOption=RAW", {
         method: "PUT",
         body: JSON.stringify({ values: [HEADERS[n]] }),
       });
+      schemaChanged = true;
     } else {
       // existing tab → append any columns added in later versions (e.g. Challenges!hidden)
       const missingCols = HEADERS[n].filter((h) => !headRow.includes(h));
@@ -173,9 +225,11 @@ async function ensureSchema_() {
           "/values/" + encodeURIComponent(n + "!" + startCol + "1:" + endCol + "1") + "?valueInputOption=RAW",
           { method: "PUT", body: JSON.stringify({ values: [missingCols] }) },
         );
+        schemaChanged = true;
       }
     }
   }
+  if (schemaChanged) invalidate_(); // a fresh snapshot must see the new tabs/columns
   schemaOk_ = true;
 }
 
@@ -187,21 +241,6 @@ function normCell_(col, v) {
   if (v === null || v === undefined) return "";
   if (DATE_COLS.test(col)) return dkey_(v);
   return v;
-}
-
-async function table_(name) {
-  const hit = readCache[name];
-  if (hit && Date.now() - hit.t < 8000) return hit.data;
-  const vals = await getValues_(name);
-  const head = HEADERS[name];
-  const out = [];
-  for (let i = 1; i < vals.length; i++) {
-    const r = {};
-    for (let j = 0; j < head.length; j++) r[head[j]] = normCell_(head[j], vals[i][j]);
-    if (r[head[0]] !== "" && r[head[0]] != null) out.push(r);
-  }
-  readCache[name] = { t: Date.now(), data: out };
-  return out;
 }
 
 async function append_(name, obj) {
@@ -336,6 +375,11 @@ async function usernameOf_(uid) {
   const f = u.find((x) => x.user_id === uid);
   return f ? String(f.username) : "unknown";
 }
+/** sync username lookup against an already-loaded snapshot */
+function usernameSync_(users, uid) {
+  const f = users.find((x) => x.user_id === uid);
+  return f ? String(f.username) : "unknown";
+}
 
 function statusFor_(date, ch, byDate) {
   if (byDate[date]) return String(byDate[date].status);
@@ -346,16 +390,18 @@ function statusFor_(date, ch, byDate) {
   return date < today ? "MISSED" : "PENDING";
 }
 
-/** streaks / stats / penalty balance — same rules as the README */
-async function computeStats_(ch, uid, from) {
-  const allTasks = await tasks_();
+/** streaks / stats / penalty balance — same rules as the README.
+ *  Pass a pre-loaded `db` snapshot to avoid re-reading tables (fast path). */
+async function computeStats_(ch, uid, from, db) {
+  const s = db || (await snapshot_());
+  const allTasks = s.DailyTasks || [];
   const byDate = {};
   allTasks.forEach((t) => { if (t.challenge_id === ch.challenge_id && t.user_id === uid) byDate[t.date] = t; });
   const compByTask = {};
-  (await completions_()).forEach((c) => { compByTask[c.task_id] = c; });
-  const penSum = (await penalties_())
+  (s.Completions || []).forEach((c) => { compByTask[c.task_id] = c; });
+  const penSum = (s.Penalties || [])
     .filter((p) => p.challenge_id === ch.challenge_id && p.user_id === uid)
-    .reduce((s, p) => s + Number(p.points || 0), 0);
+    .reduce((sum, p) => sum + Number(p.points || 0), 0);
 
   const today = today_();
   let start = ch.start_date;
@@ -412,13 +458,14 @@ async function computeStats_(ch, uid, from) {
   };
 }
 
-async function optLeft_(ch, uid) {
+async function optLeft_(ch, uid, db) {
   if (Number(ch.optional_vacations_per_week) <= 0) return 0;
+  const s = db || (await snapshot_());
   const today = today_();
   const monday = addDays_(today, -((weekday_(today) + 6) % 7));
   const week = {};
   range_(monday, addDays_(monday, 6)).forEach((k) => { week[k] = 1; });
-  const used = (await vacations_()).filter(
+  const used = (s.Vacations || []).filter(
     (v) => v.challenge_id === ch.challenge_id && v.user_id === uid && v.type === "optional" && week[v.date],
   ).length;
   return Math.max(0, Number(ch.optional_vacations_per_week) - used);
@@ -656,29 +703,40 @@ async function handle_(action, p) {
   /* ---------- home ---------- */
 
   if (action === "home") {
+    // ── OPTIMIZED: one snapshot read, everything else is in-memory ──
+    const db = await snapshot_();
     const today = today_();
+    const users = db.Users || [];
+    const chById = {};
+    (db.Challenges || []).forEach((c) => { chById[c.challenge_id] = coerceChallenge_(c); });
+
     const out = [];
     let totalPen = 0;
-    const memberships = (await members_()).filter((m) => m.user_id === p.userId);
+    const memberships = (db.Members || []).filter((m) => m.user_id === p.userId);
+
     for (const m of memberships) {
-      const ch = await challenge_(m.challenge_id);
+      const ch = chById[m.challenge_id];
       if (!ch || ch.end_date < today) continue;
-      const st = await computeStats_(ch, p.userId, m.joined_at);
+
+      const st = await computeStats_(ch, p.userId, m.joined_at, db);
       const byDate = {};
-      const myTasks = (await tasks_()).filter((t) => t.challenge_id === ch.challenge_id && t.user_id === p.userId);
-      myTasks.forEach((t) => { byDate[t.date] = t; });
+      (db.DailyTasks || []).forEach((t) => {
+        if (t.challenge_id === ch.challenge_id && t.user_id === p.userId) byDate[t.date] = t;
+      });
       const status = statusFor_(today, ch, byDate);
+
       let completion = null;
       const tToday = byDate[today];
       if (status === "DONE" && tToday) {
-        const c = (await completions_()).find((x) => x.task_id === tToday.task_id);
+        const c = (db.Completions || []).find((x) => x.task_id === tToday.task_id);
         if (c) completion = { task_id: c.task_id,
           duration: c.duration === "" || c.duration == null ? null : Number(c.duration),
           summary: c.summary === "" || c.summary == null ? null : String(c.summary) };
       }
+
       totalPen += st.penalties;
       out.push({ challenge: ch, anonymous: bool_(m.anonymous), status, streak: st.currentStreak,
-        best: st.bestStreak, optLeft: await optLeft_(ch, p.userId), penalties: st.penalties,
+        best: st.bestStreak, optLeft: await optLeft_(ch, p.userId, db), penalties: st.penalties,
         completion, deadlineOver: false });
     }
     const order = { PENDING: 0, VACATION: 1, DONE: 2, MISSED: 3 };
@@ -686,54 +744,56 @@ async function handle_(action, p) {
 
     // owner broadcasts addressed to me (last 14 days) — powers the Home feed + OS push
     const cutoff = addDays_(today, -14);
-    const annRows = (await table_("Announcements")).filter(
-      (a) => String(a.created_at || "") >= cutoff &&
+    const announcements = (db.Announcements || [])
+      .filter((a) => String(a.created_at || "") >= cutoff &&
         memberships.some((m) => m.challenge_id === a.challenge_id) &&
-        (String(a.to_id) === "all" || String(a.to_id) === p.userId),
-    );
-    const announcements = [];
-    for (const a of annRows) {
-      const ch = await challenge_(a.challenge_id);
-      announcements.push({ announcement_id: a.announcement_id, challengeName: ch ? ch.name : "",
-        fromName: await usernameOf_(a.from_id), message: String(a.message || ""), createdAt: String(a.created_at || "") });
-    }
-    announcements.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+        (String(a.to_id) === "all" || String(a.to_id) === p.userId))
+      .map((a) => ({ announcement_id: a.announcement_id,
+        challengeName: chById[a.challenge_id] ? chById[a.challenge_id].name : "",
+        fromName: usernameSync_(users, a.from_id), message: String(a.message || ""), createdAt: String(a.created_at || "") }))
+      .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)))
+      .slice(0, 10);
 
     // friend activity for enabled friend-prefs — powers "friend completed" OS push
-    const friendRows = await table_("FriendNotifications");
-    const allMem = await members_();
+    const friendRows = db.FriendNotifications || [];
     const friendsActivity = [];
     for (const m of memberships) {
-      const ch = await challenge_(m.challenge_id);
+      const ch = chById[m.challenge_id];
       if (!ch || ch.end_date < today) continue;
-      const others = allMem.filter((x) => x.challenge_id === m.challenge_id && x.user_id !== p.userId && !bool_(x.anonymous));
+      const others = (db.Members || []).filter((x) => x.challenge_id === m.challenge_id && x.user_id !== p.userId && !bool_(x.anonymous));
       for (const o of others) {
         const pref = friendRows.find((f) => f.user_id === p.userId && f.friend_id === o.user_id);
         if (!pref || !bool_(pref.enabled)) continue;
-        const s = await computeStats_(ch, o.user_id, o.joined_at);
-        friendsActivity.push({ username: await usernameOf_(o.user_id), challengeName: ch.name,
+        const s = await computeStats_(ch, o.user_id, o.joined_at, db);
+        friendsActivity.push({ username: usernameSync_(users, o.user_id), challengeName: ch.name,
           done: s.done, streak: s.currentStreak });
       }
     }
 
     return { quote: { text: QUOTES[Math.floor(Math.random() * QUOTES.length)], author: "ChallengeMate" },
-      tasks: out, totalPenalties: totalPen, announcements: announcements.slice(0, 10), friendsActivity };
+      tasks: out, totalPenalties: totalPen, announcements, friendsActivity };
   }
 
   /* ---------- detail / progress ---------- */
 
   if (action === "detail" || action === "progress") {
-    const ch = await challenge_(p.challengeId);
-    if (!ch) return { error: "Challenge not found" };
+    // ── OPTIMIZED: one snapshot read, everything else is in-memory ──
+    const db = await snapshot_();
+    const users = db.Users || [];
+    const allTasks = db.DailyTasks || [];
+    const chRaw = (db.Challenges || []).find((c) => c.challenge_id === p.challengeId);
+    if (!chRaw) return { error: "Challenge not found" };
+    const ch = coerceChallenge_(chRaw);
     const today = today_();
-    const all = (await members_()).filter((m) => m.challenge_id === p.challengeId);
+
+    const all = (db.Members || []).filter((m) => m.challenge_id === p.challengeId);
     const visible = all.filter((m) => !bool_(m.anonymous));
     const mine = all.find((m) => m.user_id === p.userId) || null;
 
     const lb = [];
     for (const m of visible) {
-      const s = await computeStats_(ch, m.user_id, m.joined_at);
-      lb.push({ user_id: m.user_id, username: await usernameOf_(m.user_id), anonymous: false,
+      const s = await computeStats_(ch, m.user_id, m.joined_at, db);
+      lb.push({ user_id: m.user_id, username: usernameSync_(users, m.user_id), anonymous: false,
         streak: s.currentStreak, best: s.bestStreak, done: s.done, penalties: s.penalties,
         completionPct: s.completionPct, isYou: m.user_id === p.userId });
     }
@@ -742,14 +802,14 @@ async function handle_(action, p) {
       if (!mine) return { error: "Not a member." };
       lb.sort((a, b) => b.completionPct - a.completionPct);
       const byDate = {};
-      (await tasks_()).filter((t) => t.challenge_id === p.challengeId && t.user_id === p.userId)
+      allTasks.filter((t) => t.challenge_id === p.challengeId && t.user_id === p.userId)
         .forEach((t) => { byDate[t.date] = t; });
       let start = ch.start_date;
       if (mine.joined_at && mine.joined_at > start) start = mine.joined_at;
       const end = ch.end_date < today ? ch.end_date : today;
       const statuses = {};
       range_(start, end).forEach((k) => { statuses[k] = statusFor_(k, ch, byDate); });
-      return { challenge: ch, stats: await computeStats_(ch, p.userId, mine.joined_at), statuses, friends: lb };
+      return { challenge: ch, stats: await computeStats_(ch, p.userId, mine.joined_at, db), statuses, friends: lb };
     }
 
     lb.sort((a, b) => b.streak - a.streak || b.best - a.best || b.done - a.done);
@@ -758,7 +818,7 @@ async function handle_(action, p) {
     const monday = addDays_(today, -((weekday_(today) + 6) % 7));
     const byD = {};
     if (mine) {
-      (await tasks_()).filter((t) => t.challenge_id === p.challengeId && t.user_id === p.userId)
+      allTasks.filter((t) => t.challenge_id === p.challengeId && t.user_id === p.userId)
         .forEach((t) => { byD[t.date] = t; });
     }
     const weekArr = range_(monday, addDays_(monday, 6)).map((k) => ({
@@ -770,7 +830,7 @@ async function handle_(action, p) {
     const penEvents = [];
     let balance = 0;
     if (mine) {
-      const penRows = (await penalties_()).filter((x) => x.challenge_id === p.challengeId && x.user_id === p.userId);
+      const penRows = (db.Penalties || []).filter((x) => x.challenge_id === p.challengeId && x.user_id === p.userId);
       let start = ch.start_date;
       if (mine.joined_at && mine.joined_at > start) start = mine.joined_at;
       const endP = ch.end_date < today ? ch.end_date : today;
@@ -785,48 +845,50 @@ async function handle_(action, p) {
           points: Number(r.points), removable: false });
       });
       penEvents.sort((a, b) => String(b.date).localeCompare(String(a.date)));
-      balance = (await computeStats_(ch, p.userId, mine.joined_at)).penalties;
+      balance = (await computeStats_(ch, p.userId, mine.joined_at, db)).penalties;
     }
+
+    const pendingInvites = !mine || String(mine.role) !== "owner" ? [] : users
+      .filter((u) => u.user_id !== p.userId &&
+        !all.some((m) => m.user_id === u.user_id) &&
+        !(db.Invites || []).some((i) => i.challenge_id === p.challengeId && i.to_id === u.user_id && String(i.status) === "pending"))
+      .map((u) => ({ user_id: u.user_id, username: String(u.username) }));
 
     return {
       challenge: ch,
       member: mine ? { challenge_id: mine.challenge_id, user_id: mine.user_id, role: String(mine.role || "member"),
         anonymous: bool_(mine.anonymous), joined_at: String(mine.joined_at || "") } : null,
-      participants: await Promise.all(visible.map(async (m) => ({ user_id: m.user_id,
-        username: await usernameOf_(m.user_id), role: String(m.role || "member"), isYou: m.user_id === p.userId }))),
+      participants: visible.map((m) => ({ user_id: m.user_id,
+        username: usernameSync_(users, m.user_id), role: String(m.role || "member"), isYou: m.user_id === p.userId })),
       hiddenCount: all.length - visible.length,
       owner: mine ? String(mine.role) === "owner" : false,
-      pendingInvites: !mine || String(mine.role) !== "owner" ? [] : await (async () => {
-        const users = await table_("Users");
-        const inv = await table_("Invites");
-        return users
-          .filter((u) => u.user_id !== p.userId &&
-            !all.some((m) => m.user_id === u.user_id) &&
-            !inv.some((i) => i.challenge_id === p.challengeId && i.to_id === u.user_id && String(i.status) === "pending"))
-          .map((u) => ({ user_id: u.user_id, username: String(u.username) }));
-      })(),
-      myStats: mine ? await computeStats_(ch, p.userId, mine.joined_at) : null,
+      pendingInvites,
+      myStats: mine ? await computeStats_(ch, p.userId, mine.joined_at, db) : null,
       week: weekArr,
       leaderboard: lb,
       iAmAnonymous: mine ? bool_(mine.anonymous) : false,
       penalties: { events: penEvents, balance },
-      optLeft: mine ? await optLeft_(ch, p.userId) : 0,
+      optLeft: mine ? await optLeft_(ch, p.userId, db) : 0,
     };
   }
 
   /* ---------- profile ---------- */
 
   if (action === "profile") {
-    const users = await table_("Users");
+    // ── OPTIMIZED: one snapshot read ──
+    const db = await snapshot_();
+    const users = db.Users || [];
     const me = users.find((u) => u.user_id === p.userId);
     if (!me) return { error: "User not found." };
-    const memberships = (await members_()).filter((m) => m.user_id === p.userId);
+    const chById = {};
+    (db.Challenges || []).forEach((c) => { chById[c.challenge_id] = coerceChallenge_(c); });
+    const memberships = (db.Members || []).filter((m) => m.user_id === p.userId);
     const g = { currentStreak: 0, bestStreak: 0, done: 0, missed: 0, vacations: 0, totalMinutes: 0,
       completionPct: 0, applicableDays: 0, perfectWeeks: 0, maxDayMinutes: 0, comeback: false, penalties: 0 };
     for (const m of memberships) {
-      const ch = await challenge_(m.challenge_id);
+      const ch = chById[m.challenge_id];
       if (!ch) continue;
-      const s = await computeStats_(ch, p.userId, m.joined_at);
+      const s = await computeStats_(ch, p.userId, m.joined_at, db);
       g.done += s.done; g.missed += s.missed; g.vacations += s.vacations;
       g.totalMinutes += s.totalMinutes; g.applicableDays += s.applicableDays;
       g.penalties += s.penalties; g.perfectWeeks += s.perfectWeeks;
@@ -838,14 +900,14 @@ async function handle_(action, p) {
     g.completionPct = g.applicableDays ? Math.round((g.done / g.applicableDays) * 100) : 0;
 
     const earnedMap = {};
-    (await table_("UserAchievements")).filter((a) => a.user_id === p.userId)
+    (db.UserAchievements || []).filter((a) => a.user_id === p.userId)
       .forEach((a) => { earnedMap[a.achievement_id] = String(a.earned_at || today_()); });
     const achievements = ACH.map((def) => ({
       def: { id: def.id, name: def.name, description: def.description, requirement: def.requirement, icon: def.icon },
       earned_at: earnedMap[def.id] || null,
     })).sort((a, b) => Number(b.earned_at !== null) - Number(a.earned_at !== null));
 
-    const settingsRows = await table_("NotificationSettings");
+    const settingsRows = db.NotificationSettings || [];
     const sRow = settingsRows.find((s) => s.user_id === p.userId);
     const settings = { user_id: p.userId,
       reminders_enabled: sRow ? bool_(sRow.reminders_enabled) : false,
@@ -854,14 +916,14 @@ async function handle_(action, p) {
       reminder_end: sRow && sRow.reminder_end ? String(sRow.reminder_end) : "22:00" };
 
     const myChallenges = memberships.map((m) => m.challenge_id);
-    const allMembers = await members_();
+    const allMembers = db.Members || [];
     const friendIds = [];
     allMembers.forEach((m) => {
       if (myChallenges.includes(m.challenge_id) && m.user_id !== p.userId && !bool_(m.anonymous) && !friendIds.includes(m.user_id)) {
         friendIds.push(m.user_id);
       }
     });
-    const friendRows = await table_("FriendNotifications");
+    const friendRows = db.FriendNotifications || [];
     const friendPrefs = [];
     for (const fid of friendIds) {
       const fu = users.find((u) => u.user_id === fid);
