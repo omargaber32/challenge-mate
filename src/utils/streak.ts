@@ -16,8 +16,9 @@ export function statusFor(
   const stored = byDate.get(date);
   if (stored) return stored.status;
   const today = todayKey();
-  if (date === today) return "PENDING";
+  // the main vacation day is ALWAYS a vacation — even today (README §9)
   if (weekdayOf(date) === challenge.main_vacation_day) return "VACATION";
+  if (date === today) return "PENDING";
   return date < today ? "MISSED" : "PENDING";
 }
 

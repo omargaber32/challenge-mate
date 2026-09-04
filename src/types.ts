@@ -29,6 +29,8 @@ export interface Challenge {
   main_vacation_day: Weekday;
   optional_vacations_per_week: number;
   created_at: string;
+  /** hidden challenges are invite-only: only the owner sees them in the list */
+  hidden?: boolean;
 }
 
 export interface Member {
@@ -71,6 +73,25 @@ export interface PenaltyRemoval {
   created_at: string;
 }
 
+export interface Invite {
+  invite_id: string;
+  challenge_id: string;
+  from_id: string;
+  to_id: string;
+  status: "pending" | "accepted" | "declined";
+  created_at: string;
+}
+
+export interface Announcement {
+  announcement_id: string;
+  challenge_id: string;
+  from_id: string;
+  to_id: string; // "all" or a user_id
+  message: string;
+  created_at: string; // yyyy-mm-dd (display)
+  ts?: string; // full ISO datetime — drives the 12h slow-mode check
+}
+
 export interface NotificationSettings {
   user_id: string;
   reminders_enabled: boolean;
@@ -102,6 +123,8 @@ export interface DB {
   notificationSettings: NotificationSettings[];
   friendNotifications: FriendNotification[];
   userAchievements: EarnedAchievement[];
+  invites: Invite[];
+  announcements: Announcement[];
 }
 
 /* ---------- computed shapes ---------- */

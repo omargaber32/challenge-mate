@@ -19,6 +19,7 @@ import type {
   ChallengeCardData,
   DetailData,
   HomeData,
+  InviteView,
   ProfileData,
   ProgressData,
 } from "./api";
@@ -113,5 +114,20 @@ export const sheetsApi = {
     rpc<void>("removePenalty", { userId, challengeId, date }),
   decreasePenalty: (userId: string, challengeId: string) =>
     rpc<void>("decreasePenalty", { userId, challengeId }),
+  endChallenge: (userId: string, challengeId: string, confirmName: string) =>
+    rpc<void>("endChallenge", { userId, challengeId, confirmName }),
+  deleteChallenge: (userId: string, challengeId: string, confirmName: string) =>
+    rpc<void>("deleteChallenge", { userId, challengeId, confirmName }),
+  leaveChallenge: (userId: string, challengeId: string) =>
+    rpc<void>("leaveChallenge", { userId, challengeId }),
+  removeParticipant: (userId: string, challengeId: string, targetId: string) =>
+    rpc<void>("removeParticipant", { userId, challengeId, targetId }),
+  sendInvite: (userId: string, challengeId: string, targetIds: string[]) =>
+    rpc<{ ok: boolean; sent: number }>("sendInvite", { userId, challengeId, targetIds }),
+  myInvites: (userId: string) => rpc<InviteView[]>("myInvites", { userId }),
+  respondInvite: (userId: string, inviteId: string, accept: boolean) =>
+    rpc<void>("respondInvite", { userId, inviteId, accept }),
+  notifyParticipants: (userId: string, challengeId: string, message: string, targetIds: string[] | "all") =>
+    rpc<{ ok: boolean; sentTo: number | "everyone" }>("notifyParticipants", { userId, challengeId, message, targetIds }),
   listUsers: (userId: string) => rpc<{ user_id: string; username: string }[]>("listUsers", { userId }),
 };

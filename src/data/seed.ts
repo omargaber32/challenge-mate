@@ -326,5 +326,16 @@ export function buildSeedDB(): DB {
     notificationSettings,
     friendNotifications,
     userAchievements: [],
+    invites: [],
+    announcements: [
+      {
+        announcement_id: "an_seed_1",
+        challenge_id: "c_reading",
+        from_id: "u_sara",
+        to_id: "all",
+        message: "New month, same rules — let's keep the Friday vacations sacred. Happy reading! 📚",
+        created_at: keyShift(todayKey(), -1),
+      },
+    ],
   };
 }

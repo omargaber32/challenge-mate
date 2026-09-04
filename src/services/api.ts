@@ -18,6 +18,7 @@
  */
 
 import type {
+  Announcement,
   Challenge,
   Completion,
   DB,
@@ -215,10 +216,35 @@ export interface TaskView {
   deadlineOver: boolean;
 }
 
+export interface AnnouncementView {
+  announcement_id: string;
+  challengeName: string;
+  fromName: string;
+  message: string;
+  createdAt: string;
+}
+
+export interface FriendActivity {
+  username: string;
+  challengeName: string;
+  done: number;
+  streak: number;
+}
+
+export interface InviteView {
+  invite_id: string;
+  challenge_id: string;
+  challenge_name: string;
+  from_name: string;
+  created_at: string;
+}
+
 export interface HomeData {
   quote: { text: string; author: string };
   tasks: TaskView[];
   totalPenalties: number;
+  announcements: AnnouncementView[];
+  friendsActivity: FriendActivity[];
 }
 
 export interface ChallengeCardData {
@@ -384,7 +410,47 @@ const localApi = {
     const order: Record<TaskStatus, number> = { PENDING: 0, VACATION: 1, DONE: 2, MISSED: 3 };
     views.sort((a, b) => order[a.status] - order[b.status] || a.challenge.name.localeCompare(b.challenge.name));
 
-    return { quote: randomQuote(), tasks: views, totalPenalties };
+    // owner broadcasts addressed to me (last 14 days)
+    const memberships = db.members.filter((x) => x.user_id === userId);
+    const cutoff = keyShift(today, -14);
+    const announcements: AnnouncementView[] = db.announcements
+      .filter(
+        (a) =>
+          a.created_at >= cutoff &&
+          memberships.some((m) => m.challenge_id === a.challenge_id) &&
+          (a.to_id === "all" || a.to_id === userId),
+      )
+      .map((a) => ({
+        announcement_id: a.announcement_id,
+        challengeName: db.challenges.find((c) => c.challenge_id === a.challenge_id)?.name ?? "",
+        fromName: usernameOf(db, a.from_id),
+        message: a.message,
+        createdAt: a.created_at,
+      }))
+      .sort((x, y) => y.createdAt.localeCompare(x.createdAt))
+      .slice(0, 10);
+
+    // friend activity for enabled friend-prefs
+    const friendsActivity: FriendActivity[] = [];
+    for (const m of memberships) {
+      const ch = db.challenges.find((c) => c.challenge_id === m.challenge_id);
+      if (!ch || ch.end_date < today) continue;
+      for (const o of db.members.filter(
+        (x) => x.challenge_id === m.challenge_id && x.user_id !== userId && !x.anonymous,
+      )) {
+        const pref = db.friendNotifications.find((f) => f.user_id === userId && f.friend_id === o.user_id);
+        if (!pref || !pref.enabled) continue;
+        const s = statsFor(db, ch, o.user_id, o.joined_at);
+        friendsActivity.push({
+          username: usernameOf(db, o.user_id),
+          challengeName: ch.name,
+          done: s.done,
+          streak: s.currentStreak,
+        });
+      }
+    }
+
+    return { quote: randomQuote(), tasks: views, totalPenalties, announcements, friendsActivity };
   },
 
   /** shuffle a fresh motivational line (README §3) */
@@ -465,13 +531,16 @@ const localApi = {
     await lag();
     const db = loadDB();
     const today = todayKey();
-    return db.challenges.map((challenge) => {
-      const member = memberOf(db, challenge.challenge_id, userId);
-      const participants = db.members.filter((m) => m.challenge_id === challenge.challenge_id).length;
-      const state: ChallengeCardData["state"] =
-        challenge.end_date < today ? "ended" : member ? "joined" : "discover";
-      return { challenge, member, participants, state };
-    });
+    return db.challenges
+      // hidden challenges are invite-only: only the owner ever sees them in the list
+      .filter((c) => !c.hidden || c.owner_id === userId)
+      .map((challenge) => {
+        const member = memberOf(db, challenge.challenge_id, userId);
+        const participants = db.members.filter((m) => m.challenge_id === challenge.challenge_id).length;
+        const state: ChallengeCardData["state"] =
+          challenge.end_date < today ? "ended" : member ? "joined" : "discover";
+        return { challenge, member, participants, state };
+      });
   },
 
   async enroll(challengeId: string, userId: string, anonymous: boolean): Promise<void> {
@@ -504,7 +573,7 @@ const localApi = {
       penalty_points: number;
       main_vacation_day: Challenge["main_vacation_day"];
       optional_vacations_per_week: number;
-      inviteIds: string[];
+      hidden: boolean;
     },
   ): Promise<Challenge> {
     if (WORKER_URL) return workerFetch("/challenge/create", { userId, ...input });
@@ -524,14 +593,12 @@ const localApi = {
       main_vacation_day: input.main_vacation_day,
       optional_vacations_per_week: input.optional_vacations_per_week,
       created_at: todayKey(),
+      hidden: input.hidden,
     };
+    // no participants are added at creation — people discover the challenge,
+    // or (for hidden ones) receive an invite from the owner
     db.challenges.push(ch);
     db.members.push({ challenge_id: ch.challenge_id, user_id: userId, role: "owner", anonymous: false, joined_at: todayKey() });
-    for (const uid of input.inviteIds) {
-      if (uid !== userId && db.users.some((u) => u.user_id === uid)) {
-        db.members.push({ challenge_id: ch.challenge_id, user_id: uid, role: "member", anonymous: false, joined_at: todayKey() });
-      }
-    }
     persist(db);
     return ch;
   },
@@ -764,6 +831,169 @@ const localApi = {
       created_at: todayKey(),
     });
     persist(db);
+  },
+
+  /* ---------- owner tools ---------- */
+
+  async endChallenge(userId: string, challengeId: string, confirmName: string): Promise<void> {
+    if (WORKER_URL) return workerFetch("/challenge/end", { userId, challengeId, confirmName });
+    await lag();
+    const db = loadDB();
+    const ch = challengeById(db, challengeId);
+    const m = memberOf(db, challengeId, userId);
+    if (!m || m.role !== "owner") throw new Error("Only the owner can end this challenge.");
+    if (confirmName !== ch.name) throw new Error("Challenge name doesn't match — nothing was changed.");
+    ch.end_date = keyShift(todayKey(), -1);
+    persist(db);
+  },
+
+  async deleteChallenge(userId: string, challengeId: string, confirmName: string): Promise<void> {
+    if (WORKER_URL) return workerFetch("/challenge/delete", { userId, challengeId, confirmName });
+    await lag();
+    const db = loadDB();
+    const ch = challengeById(db, challengeId);
+    const m = memberOf(db, challengeId, userId);
+    if (!m || m.role !== "owner") throw new Error("Only the owner can delete this challenge.");
+    if (confirmName !== ch.name) throw new Error("Challenge name doesn't match — nothing was deleted.");
+    const taskIds = new Set(db.dailyTasks.filter((t) => t.challenge_id === challengeId).map((t) => t.task_id));
+    db.members = db.members.filter((x) => x.challenge_id !== challengeId);
+    db.dailyTasks = db.dailyTasks.filter((t) => t.challenge_id !== challengeId);
+    db.completions = db.completions.filter((c) => !taskIds.has(c.task_id));
+    db.vacations = db.vacations.filter((v) => v.challenge_id !== challengeId);
+    db.penaltyRemovals = db.penaltyRemovals.filter((p) => p.challenge_id !== challengeId);
+    db.invites = db.invites.filter((i) => i.challenge_id !== challengeId);
+    db.announcements = db.announcements.filter((a) => a.challenge_id !== challengeId);
+    db.challenges = db.challenges.filter((c) => c.challenge_id !== challengeId);
+    persist(db);
+  },
+
+  async leaveChallenge(userId: string, challengeId: string): Promise<void> {
+    if (WORKER_URL) return workerFetch("/challenge/leave", { userId, challengeId });
+    await lag();
+    const db = loadDB();
+    const m = memberOf(db, challengeId, userId);
+    if (!m) throw new Error("You are not a member.");
+    if (m.role === "owner") throw new Error("Owners can't leave — end or delete the challenge instead.");
+    db.members = db.members.filter((x) => !(x.challenge_id === challengeId && x.user_id === userId));
+    persist(db);
+  },
+
+  async removeParticipant(userId: string, challengeId: string, targetId: string): Promise<void> {
+    if (WORKER_URL) return workerFetch("/challenge/removeParticipant", { userId, challengeId, targetId });
+    await lag();
+    const db = loadDB();
+    const m = memberOf(db, challengeId, userId);
+    if (!m || m.role !== "owner") throw new Error("Only the owner can remove participants.");
+    if (targetId === userId) throw new Error("That's you — owners can't be removed.");
+    db.members = db.members.filter((x) => !(x.challenge_id === challengeId && x.user_id === targetId));
+    persist(db);
+  },
+
+  /* ---------- invites (hidden challenges) ---------- */
+
+  async sendInvite(userId: string, challengeId: string, targetIds: string[]): Promise<{ sent: number }> {
+    if (WORKER_URL) return workerFetch("/challenge/invite", { userId, challengeId, targetIds });
+    await lag();
+    const db = loadDB();
+    const m = memberOf(db, challengeId, userId);
+    if (!m || m.role !== "owner") throw new Error("Only the owner can invite people.");
+    let sent = 0;
+    for (const uid of targetIds) {
+      if (uid === userId) continue;
+      if (memberOf(db, challengeId, uid)) continue;
+      if (db.invites.some((i) => i.challenge_id === challengeId && i.to_id === uid && i.status === "pending")) continue;
+      db.invites.push({
+        invite_id: `inv_${Date.now().toString(36)}_${sent}`,
+        challenge_id: challengeId,
+        from_id: userId,
+        to_id: uid,
+        status: "pending",
+        created_at: todayKey(),
+      });
+      sent++;
+    }
+    persist(db);
+    return { sent };
+  },
+
+  async myInvites(userId: string): Promise<InviteView[]> {
+    if (WORKER_URL) return workerFetch("/invites", { userId });
+    await sleep(90);
+    const db = loadDB();
+    const out: InviteView[] = [];
+    for (const i of db.invites.filter((x) => x.to_id === userId && x.status === "pending")) {
+      const ch = db.challenges.find((c) => c.challenge_id === i.challenge_id);
+      if (!ch) continue;
+      out.push({
+        invite_id: i.invite_id,
+        challenge_id: i.challenge_id,
+        challenge_name: ch.name,
+        from_name: usernameOf(db, i.from_id),
+        created_at: i.created_at,
+      });
+    }
+    return out;
+  },
+
+  async respondInvite(userId: string, inviteId: string, accept: boolean): Promise<void> {
+    if (WORKER_URL) return workerFetch("/invites/respond", { userId, inviteId, accept });
+    await lag();
+    const db = loadDB();
+    const inv = db.invites.find((i) => i.invite_id === inviteId && i.to_id === userId && i.status === "pending");
+    if (!inv) throw new Error("Invite not found or already answered.");
+    inv.status = accept ? "accepted" : "declined";
+    if (accept && !memberOf(db, inv.challenge_id, userId)) {
+      db.members.push({ challenge_id: inv.challenge_id, user_id: userId, role: "member", anonymous: false, joined_at: todayKey() });
+    }
+    persist(db);
+  },
+
+  /* ---------- owner broadcasts (12h slow mode) ---------- */
+
+  async notifyParticipants(
+    userId: string,
+    challengeId: string,
+    message: string,
+    targetIds: string[] | "all",
+  ): Promise<{ sentTo: number | "everyone" }> {
+    if (WORKER_URL) return workerFetch("/challenge/notify", { userId, challengeId, message, targetIds });
+    await lag();
+    const db = loadDB();
+    challengeById(db, challengeId);
+    const m = memberOf(db, challengeId, userId);
+    if (!m || m.role !== "owner") throw new Error("Only the owner can broadcast.");
+    const msg = message.trim();
+    if (!msg) throw new Error("Write a message first.");
+
+    const H12 = 12 * 3600 * 1000;
+    const last = db.announcements
+      .filter((a) => a.challenge_id === challengeId && a.from_id === userId)
+      .sort((a, b) => (b.ts ?? b.created_at).localeCompare(a.ts ?? a.created_at))[0];
+    if (last && last.ts) {
+      const lastTs = new Date(last.ts).getTime();
+      if (Date.now() - lastTs < H12) {
+        const waitMin = Math.ceil((H12 - (Date.now() - lastTs)) / 60000);
+        const h = Math.floor(waitMin / 60), mm = waitMin % 60;
+        throw new Error(`Slow mode — you can send the next message in ${h ? h + "h " : ""}${mm}m.`);
+      }
+    }
+
+    const targets = targetIds === "all" ? ["all"] : targetIds.filter((t) => t !== userId);
+    if (!targets.length) throw new Error("Pick at least one participant.");
+    const ts = new Date().toISOString();
+    targets.forEach((t, idx) => {
+      db.announcements.push({
+        announcement_id: `an_${Date.now().toString(36)}_${idx}`,
+        challenge_id: challengeId,
+        from_id: userId,
+        to_id: t,
+        message: msg,
+        created_at: todayKey(),
+        ts,
+      });
+    });
+    persist(db);
+    return { sentTo: targets[0] === "all" ? "everyone" : targets.length };
   },
 
   /** directory of registered users (for invite lists) */

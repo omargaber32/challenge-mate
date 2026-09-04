@@ -123,8 +123,9 @@ async function getValues_(range) {
 
 const HEADERS = {
   Users: ["user_id", "username", "password", "created_at"],
+  // `hidden` was added later — ensureSchema_ appends missing columns to old sheets automatically
   Challenges: ["challenge_id", "name", "icon", "description", "rules", "owner_id", "start_date", "end_date",
-    "deadline", "penalty_points", "main_vacation_day", "optional_vacations_per_week", "created_at"],
+    "deadline", "penalty_points", "main_vacation_day", "optional_vacations_per_week", "created_at", "hidden"],
   Members: ["challenge_id", "user_id", "role", "anonymous", "joined_at"],
   DailyTasks: ["task_id", "challenge_id", "user_id", "date", "status", "completed_at"],
   Completions: ["task_id", "duration", "summary"],
@@ -134,6 +135,9 @@ const HEADERS = {
   UserAchievements: ["user_id", "achievement_id", "earned_at"],
   NotificationSettings: ["user_id", "reminders_enabled", "reminder_frequency", "reminder_start", "reminder_end"],
   FriendNotifications: ["user_id", "friend_id", "enabled"],
+  Invites: ["invite_id", "challenge_id", "from_id", "to_id", "status", "created_at"],
+  // owner broadcasts; `ts` keeps full ISO time for the 12h slow-mode check
+  Announcements: ["announcement_id", "challenge_id", "from_id", "to_id", "message", "created_at", "ts"],
 };
 const SHEET_NAMES = Object.keys(HEADERS);
 const DATE_COLS = /(^|_)(date|at)$/; // created_at, joined_at, start_date, date…
@@ -152,12 +156,24 @@ async function ensureSchema_() {
     metaCache.data = null;
   }
   for (const n of SHEET_NAMES) {
-    const vals = await getValues_(n);
-    if (!vals.length) {
+    const headRow = (await getValues_(n + "!1:1"))[0] || [];
+    if (!headRow.length) {
+      // brand-new tab → write the header row
       await sheets_("/values/" + encodeURIComponent(n + "!A1") + "?valueInputOption=RAW", {
         method: "PUT",
         body: JSON.stringify({ values: [HEADERS[n]] }),
       });
+    } else {
+      // existing tab → append any columns added in later versions (e.g. Challenges!hidden)
+      const missingCols = HEADERS[n].filter((h) => !headRow.includes(h));
+      if (missingCols.length) {
+        const startCol = rowLetter_(headRow.length);
+        const endCol = rowLetter_(headRow.length + missingCols.length - 1);
+        await sheets_(
+          "/values/" + encodeURIComponent(n + "!" + startCol + "1:" + endCol + "1") + "?valueInputOption=RAW",
+          { method: "PUT", body: JSON.stringify({ values: [missingCols] }) },
+        );
+      }
     }
   }
   schemaOk_ = true;
@@ -219,12 +235,20 @@ function rowLetter_(idx) {
 }
 
 async function deleteRowsWhere_(name, colName, value) {
+  return deleteRowMatch_(name, { [colName]: value });
+}
+
+/** delete every row whose columns ALL match the given key/value pairs */
+async function deleteRowMatch_(name, match) {
   const meta = await meta_();
   let gid = null;
   meta.sheets.forEach((s) => { if (s.properties.title === name) gid = s.properties.sheetId; });
   const rows = await table_(name);
   const idxs = [];
-  rows.forEach((r, i) => { if (String(r[colName]) === String(value)) idxs.push(i + 1); }); // +1 header row
+  rows.forEach((r, i) => {
+    const ok = Object.keys(match).every((k) => String(r[k]) === String(match[k]));
+    if (ok) idxs.push(i + 1); // +1 header row
+  });
   if (!idxs.length) return;
   idxs.sort((a, b) => b - a);
   await sheets_(":batchUpdate", {
@@ -297,6 +321,7 @@ function coerceChallenge_(c) {
     main_vacation_day: Number(c.main_vacation_day) || 0,
     optional_vacations_per_week: Number(c.optional_vacations_per_week) || 0,
     created_at: String(c.created_at || ""),
+    hidden: bool_(c.hidden),
   };
 }
 
@@ -315,8 +340,9 @@ async function usernameOf_(uid) {
 function statusFor_(date, ch, byDate) {
   if (byDate[date]) return String(byDate[date].status);
   const today = today_();
-  if (date === today) return "PENDING";
+  // the main vacation day is ALWAYS a vacation — even today (README §9)
   if (weekday_(date) === Number(ch.main_vacation_day)) return "VACATION";
+  if (date === today) return "PENDING";
   return date < today ? "MISSED" : "PENDING";
 }
 
@@ -509,6 +535,8 @@ async function handle_(action, p) {
     const out = [];
     for (const c of chs) {
       const ch = coerceChallenge_(c);
+      // hidden challenges are only ever visible to their owner (README: invite-only)
+      if (ch.hidden && ch.owner_id !== p.userId) continue;
       const mine = mem.find((m) => m.challenge_id === ch.challenge_id && m.user_id === p.userId) || null;
       out.push({
         challenge: ch,
@@ -519,6 +547,34 @@ async function handle_(action, p) {
       });
     }
     return out;
+  }
+
+  if (action === "myInvites") {
+    const inv = (await table_("Invites")).filter((i) => i.to_id === p.userId && String(i.status) === "pending");
+    const out = [];
+    for (const i of inv) {
+      const ch = await challenge_(i.challenge_id);
+      if (!ch) continue;
+      out.push({ invite_id: i.invite_id, challenge_id: i.challenge_id, challenge_name: ch.name,
+        from_name: await usernameOf_(i.from_id), created_at: String(i.created_at || "") });
+    }
+    return out;
+  }
+
+  if (action === "respondInvite") {
+    const rows = await table_("Invites");
+    const idx = rows.findIndex((i) => i.invite_id === p.inviteId && i.to_id === p.userId && String(i.status) === "pending");
+    if (idx < 0) return { error: "Invite not found or already answered." };
+    const row = Object.assign({}, rows[idx], { status: p.accept ? "accepted" : "declined" });
+    await putRow_("Invites", idx + 2, row);
+    if (p.accept) {
+      const mem = await members_();
+      const ch = rows[idx].challenge_id;
+      if (!mem.some((m) => m.challenge_id === ch && m.user_id === p.userId)) {
+        await append_("Members", { challenge_id: ch, user_id: p.userId, role: "member", anonymous: false, joined_at: today_() });
+      }
+    }
+    return { ok: true };
   }
 
   if (action === "enroll") {
@@ -546,17 +602,12 @@ async function handle_(action, p) {
       main_vacation_day: p.main_vacation_day != null ? Number(p.main_vacation_day) : 5,
       optional_vacations_per_week: p.optional_vacations_per_week != null ? Number(p.optional_vacations_per_week) : 1,
       created_at: today_(),
+      hidden: !!p.hidden,
     };
+    // no participants are added at creation — people discover the challenge
+    // or (for hidden ones) receive an invite from the owner
     await append_("Challenges", ch);
     await append_("Members", { challenge_id: cid, user_id: p.userId, role: "owner", anonymous: false, joined_at: today_() });
-    if (Array.isArray(p.inviteIds)) {
-      const users = await table_("Users");
-      for (const uid of p.inviteIds) {
-        if (uid !== p.userId && users.some((u) => u.user_id === uid)) {
-          await append_("Members", { challenge_id: cid, user_id: uid, role: "member", anonymous: false, joined_at: today_() });
-        }
-      }
-    }
     return coerceChallenge_(ch);
   }
 
@@ -624,8 +675,41 @@ async function handle_(action, p) {
     }
     const order = { PENDING: 0, VACATION: 1, DONE: 2, MISSED: 3 };
     out.sort((a, b) => order[a.status] - order[b.status] || a.challenge.name.localeCompare(b.challenge.name));
+
+    // owner broadcasts addressed to me (last 14 days) — powers the Home feed + OS push
+    const cutoff = addDays_(today, -14);
+    const annRows = (await table_("Announcements")).filter(
+      (a) => String(a.created_at || "") >= cutoff &&
+        memberships.some((m) => m.challenge_id === a.challenge_id) &&
+        (String(a.to_id) === "all" || String(a.to_id) === p.userId),
+    );
+    const announcements = [];
+    for (const a of annRows) {
+      const ch = await challenge_(a.challenge_id);
+      announcements.push({ announcement_id: a.announcement_id, challengeName: ch ? ch.name : "",
+        fromName: await usernameOf_(a.from_id), message: String(a.message || ""), createdAt: String(a.created_at || "") });
+    }
+    announcements.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+
+    // friend activity for enabled friend-prefs — powers "friend completed" OS push
+    const friendRows = await table_("FriendNotifications");
+    const allMem = await members_();
+    const friendsActivity = [];
+    for (const m of memberships) {
+      const ch = await challenge_(m.challenge_id);
+      if (!ch || ch.end_date < today) continue;
+      const others = allMem.filter((x) => x.challenge_id === m.challenge_id && x.user_id !== p.userId && !bool_(x.anonymous));
+      for (const o of others) {
+        const pref = friendRows.find((f) => f.user_id === p.userId && f.friend_id === o.user_id);
+        if (!pref || !bool_(pref.enabled)) continue;
+        const s = await computeStats_(ch, o.user_id, o.joined_at);
+        friendsActivity.push({ username: await usernameOf_(o.user_id), challengeName: ch.name,
+          done: s.done, streak: s.currentStreak });
+      }
+    }
+
     return { quote: { text: QUOTES[Math.floor(Math.random() * QUOTES.length)], author: "ChallengeMate" },
-      tasks: out, totalPenalties: totalPen };
+      tasks: out, totalPenalties: totalPen, announcements: announcements.slice(0, 10), friendsActivity };
   }
 
   /* ---------- detail / progress ---------- */
@@ -790,6 +874,103 @@ async function handle_(action, p) {
       user_id: p.userId, date: today_(), points: -Number(ch ? ch.penalty_points : 1),
       reason: "Penalty decreased", created_at: today_() });
     return { ok: true };
+  }
+
+  /* ---------- owner tools ---------- */
+
+  if (action === "endChallenge" || action === "deleteChallenge") {
+    const ch = await challenge_(p.challengeId);
+    if (!ch) return { error: "Challenge not found" };
+    const mine = (await members_()).find((m) => m.challenge_id === p.challengeId && m.user_id === p.userId);
+    if (!mine || String(mine.role) !== "owner") return { error: "Only the owner can do that." };
+    if (String(p.confirmName || "") !== ch.name) return { error: "Challenge name doesn't match — nothing was changed." };
+
+    if (action === "endChallenge") {
+      const rows = await table_("Challenges");
+      const idx = rows.findIndex((r) => r.challenge_id === p.challengeId);
+      if (idx >= 0) {
+        const row = Object.assign({}, rows[idx], { end_date: addDays_(today_(), -1) });
+        await putRow_("Challenges", idx + 2, row);
+      }
+      return { ok: true };
+    }
+
+    // delete: wipe every row that belongs to this challenge
+    await deleteRowsWhere_("Members", "challenge_id", p.challengeId);
+    await deleteRowsWhere_("DailyTasks", "challenge_id", p.challengeId);
+    await deleteRowsWhere_("Vacations", "challenge_id", p.challengeId);
+    await deleteRowsWhere_("Penalties", "challenge_id", p.challengeId);
+    await deleteRowsWhere_("Invites", "challenge_id", p.challengeId);
+    await deleteRowsWhere_("Announcements", "challenge_id", p.challengeId);
+    const comps = (await completions_()).filter((c) => String(c.task_id).indexOf(p.challengeId + "__") === 0);
+    for (const c of comps) await deleteRowsWhere_("Completions", "task_id", c.task_id);
+    await deleteRowsWhere_("Challenges", "challenge_id", p.challengeId);
+    return { ok: true };
+  }
+
+  if (action === "leaveChallenge") {
+    const mine = (await members_()).find((m) => m.challenge_id === p.challengeId && m.user_id === p.userId);
+    if (!mine) return { error: "You are not a member." };
+    if (String(mine.role) === "owner") return { error: "Owners can't leave — end or delete the challenge instead." };
+    await deleteRowMatch_("Members", { challenge_id: p.challengeId, user_id: p.userId });
+    return { ok: true };
+  }
+
+  if (action === "removeParticipant") {
+    const mine = (await members_()).find((m) => m.challenge_id === p.challengeId && m.user_id === p.userId);
+    if (!mine || String(mine.role) !== "owner") return { error: "Only the owner can remove participants." };
+    if (p.targetId === p.userId) return { error: "That's you — owners can't be removed." };
+    await deleteRowMatch_("Members", { challenge_id: p.challengeId, user_id: p.targetId });
+    return { ok: true };
+  }
+
+  if (action === "sendInvite") {
+    const mine = (await members_()).find((m) => m.challenge_id === p.challengeId && m.user_id === p.userId);
+    if (!mine || String(mine.role) !== "owner") return { error: "Only the owner can invite people." };
+    const mem = await members_();
+    const inv = await table_("Invites");
+    let sent = 0;
+    for (const uid of p.targetIds || []) {
+      if (uid === p.userId) continue;
+      if (mem.some((m) => m.challenge_id === p.challengeId && m.user_id === uid)) continue; // already in
+      if (inv.some((i) => i.challenge_id === p.challengeId && i.to_id === uid && String(i.status) === "pending")) continue;
+      await append_("Invites", { invite_id: "inv_" + Date.now().toString(36) + "_" + sent,
+        challenge_id: p.challengeId, from_id: p.userId, to_id: uid, status: "pending", created_at: today_() });
+      sent++;
+    }
+    return { ok: true, sent };
+  }
+
+  if (action === "notifyParticipants") {
+    const ch = await challenge_(p.challengeId);
+    if (!ch) return { error: "Challenge not found" };
+    const mine = (await members_()).find((m) => m.challenge_id === p.challengeId && m.user_id === p.userId);
+    if (!mine || String(mine.role) !== "owner") return { error: "Only the owner can broadcast." };
+    const msg = String(p.message || "").trim();
+    if (!msg) return { error: "Write a message first." };
+
+    // slow mode: 12h between two broadcasts in the same challenge
+    const ann = await table_("Announcements");
+    const cutoff = Date.now() - 12 * 3600 * 1000;
+    const recent = ann
+      .filter((a) => a.challenge_id === p.challengeId && a.from_id === p.userId && a.ts && new Date(a.ts).getTime() > cutoff)
+      .sort((a, b) => String(b.ts).localeCompare(String(a.ts)))[0];
+    if (recent) {
+      const waitMin = Math.ceil((12 * 3600 * 1000 - (Date.now() - new Date(recent.ts).getTime())) / 60000);
+      const h = Math.floor(waitMin / 60), m = waitMin % 60;
+      return { error: "Slow mode — you can send the next message in " + (h ? h + "h " : "") + m + "m." };
+    }
+
+    const ts = new Date().toISOString();
+    const targets = p.targetIds === "all" || !Array.isArray(p.targetIds)
+      ? ["all"]
+      : p.targetIds.filter((t) => t !== p.userId);
+    if (!targets.length) return { error: "Pick at least one participant." };
+    for (const t of targets) {
+      await append_("Announcements", { announcement_id: "an_" + Date.now().toString(36) + "_" + targets.indexOf(t),
+        challenge_id: p.challengeId, from_id: p.userId, to_id: t, message: msg, created_at: today_(), ts });
+    }
+    return { ok: true, sentTo: targets.length === 1 && targets[0] === "all" ? "everyone" : targets.length };
   }
 
   /* ---------- settings ---------- */

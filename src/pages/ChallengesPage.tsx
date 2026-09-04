@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { api, type ChallengeCardData } from "../services/api";
+import { api, type ChallengeCardData, type InviteView } from "../services/api";
 import type { Challenge, ChallengeIcon, User, Weekday } from "../types";
 import { Field, Modal, Reveal, btnGhost, btnSolid, cardCls, inputCls, useToast } from "../components/ui";
-import { CHALLENGE_ICONS, CheckIcon, PlusIcon, UmbrellaIcon, UsersIcon } from "../components/icons";
+import { CHALLENGE_ICONS, CheckIcon, LockIcon, PlusIcon, UmbrellaIcon, UsersIcon, XIcon } from "../components/icons";
 import { WEEKDAY_FULL, fmtRange, keyShift, todayKey } from "../utils/dates";
 
 const ICON_TINT: Record<string, string> = {
@@ -26,11 +26,26 @@ export default function ChallengesPage({ user, onOpen }: { user: User; onOpen: (
   const [anonConfirm, setAnonConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [invites, setInvites] = useState<InviteView[]>([]);
 
   const load = useCallback(() => {
     api.getChallenges(user.user_id).then(setData);
+    api.myInvites(user.user_id).then(setInvites).catch(() => setInvites([]));
   }, [user.user_id]);
   useEffect(load, [load]);
+
+  const answerInvite = async (inv: InviteView, accept: boolean) => {
+    setBusy(true);
+    try {
+      await api.respondInvite(user.user_id, inv.invite_id, accept);
+      toast.push(accept ? `Joined ${inv.challenge_name} — see you on Home!` : "Invite declined.", accept ? "success" : "info");
+      load();
+    } catch (ex) {
+      toast.push(ex instanceof Error ? ex.message : "Could not answer invite.", "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const doEnroll = async (anonymous: boolean) => {
     if (!enrollFor) return;
@@ -89,6 +104,46 @@ export default function ChallengesPage({ user, onOpen }: { user: User; onOpen: (
         ))}
       </div>
 
+      {/* pending invites (hidden-challenge flow) */}
+      {invites.length > 0 && (
+        <section className="space-y-2.5">
+          <h2 className="font-display flex items-center gap-2 text-lg font-extrabold text-bone-100">
+            <UsersIcon className="h-5 w-5 text-ember-400" /> Invites for you
+          </h2>
+          {invites.map((inv, i) => (
+            <Reveal key={inv.invite_id} delay={i * 60}>
+              <div className={`${cardCls} flex items-center justify-between gap-3 border-ember-500/35 p-4`}>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-bone-100">
+                    <span className="capitalize text-ember-300">{inv.from_name}</span> invited you to{" "}
+                    <span className="text-ember-300">{inv.challenge_name}</span>
+                  </p>
+                  <p className="mt-0.5 text-[11.5px] font-semibold text-bone-600">Accept to join — or decline, no hard feelings.</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <button
+                    onClick={() => answerInvite(inv, true)}
+                    disabled={busy}
+                    aria-label="Accept invite"
+                    className="rounded-[10px] bg-leaf-500 p-2 text-ink-950 transition hover:bg-leaf-400 active:scale-95 disabled:opacity-40"
+                  >
+                    <CheckIcon className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => answerInvite(inv, false)}
+                    disabled={busy}
+                    aria-label="Decline invite"
+                    className="rounded-[10px] border border-ink-500 p-2 text-bone-400 transition hover:border-coral-400/60 hover:text-coral-300 active:scale-95 disabled:opacity-40"
+                  >
+                    <XIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            </Reveal>
+          ))}
+        </section>
+      )}
+
       <section className="space-y-4">
         {!data && (
           <div className={`${cardCls} animate-pulse p-5`}>
@@ -115,10 +170,17 @@ export default function ChallengesPage({ user, onOpen }: { user: User; onOpen: (
                       </p>
                     </div>
                   </div>
-                  <span className="inline-flex items-center gap-1.5 rounded-full border border-ink-500 bg-ink-800 px-2.5 py-1 text-[11px] font-bold text-bone-300">
-                    <UsersIcon className="h-3.5 w-3.5" />
-                    {d.participants} participant{d.participants === 1 ? "" : "s"}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-ink-500 bg-ink-800 px-2.5 py-1 text-[11px] font-bold text-bone-300">
+                      <UsersIcon className="h-3.5 w-3.5" />
+                      {d.participants} participant{d.participants === 1 ? "" : "s"}
+                    </span>
+                    {d.challenge.hidden && (
+                      <span className="inline-flex items-center gap-1.5 rounded-full border border-gold-500/45 bg-gold-400/10 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[0.12em] text-gold-300">
+                        <LockIcon className="h-3 w-3" /> Hidden · invite-only
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 <p className="mt-3 text-sm leading-relaxed text-bone-500">{d.challenge.description}</p>
@@ -267,14 +329,9 @@ function CreateModal({ user, onClose, onCreated }: { user: User; onClose: () => 
   const [penalty, setPenalty] = useState("1");
   const [mainDay, setMainDay] = useState<Weekday>(5);
   const [optPerWeek, setOptPerWeek] = useState(1);
-  const [invites, setInvites] = useState<string[]>([]);
-  const [others, setOthers] = useState<{ user_id: string; username: string }[]>([]);
+  const [hidden, setHidden] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
-
-  useEffect(() => {
-    api.listUsers(user.user_id).then(setOthers);
-  }, [user.user_id]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -294,9 +351,9 @@ function CreateModal({ user, onClose, onCreated }: { user: User; onClose: () => 
         penalty_points: Math.max(0, Number(penalty) || 0),
         main_vacation_day: mainDay,
         optional_vacations_per_week: optPerWeek,
-        inviteIds: invites,
+        hidden,
       });
-      toast.push(`“${name.trim()}” created — you are enrolled as owner.`);
+      toast.push(hidden ? `“${name.trim()}” created (hidden) — invite people from its page.` : `“${name.trim()}” created — you are enrolled as owner.`);
       onCreated();
     } catch (ex) {
       setErr(ex instanceof Error ? ex.message : "Could not create challenge.");
@@ -374,24 +431,26 @@ function CreateModal({ user, onClose, onCreated }: { user: User; onClose: () => 
           </Field>
         </div>
 
-        <Field label="Participants" hint="optional — people can also discover it">
-          <div className="space-y-2">
-            {others.map((o) => (
-              <label key={o.user_id} className="flex cursor-pointer items-center gap-3 rounded-[10px] border border-ink-600 bg-ink-900 px-3 py-2 transition hover:border-ink-500">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 accent-[#FF7A33]"
-                  checked={invites.includes(o.user_id)}
-                  onChange={(e) =>
-                    setInvites((v) => (e.target.checked ? [...v, o.user_id] : v.filter((x) => x !== o.user_id)))
-                  }
-                />
-                <span className="text-sm font-semibold capitalize text-bone-300">{o.username}</span>
-              </label>
-            ))}
-            {others.length === 0 && <p className="text-xs text-bone-600">No other users yet.</p>}
-          </div>
-        </Field>
+        <label className={`flex cursor-pointer items-start gap-3 rounded-[12px] border p-3.5 transition ${hidden ? "border-gold-500/50 bg-gold-400/10" : "border-ink-600 bg-ink-900 hover:border-ink-500"}`}>
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-[#EAC26B]"
+            checked={hidden}
+            onChange={(e) => setHidden(e.target.checked)}
+          />
+          <span>
+            <span className={`flex items-center gap-1.5 text-sm font-bold ${hidden ? "text-gold-300" : "text-bone-100"}`}>
+              <LockIcon className="h-3.5 w-3.5" /> Hidden challenge
+            </span>
+            <span className="mt-0.5 block text-[11.5px] leading-snug text-bone-500">
+              Only you see it. Nobody can self-enroll — you invite chosen people and they accept or decline.
+            </span>
+          </span>
+        </label>
+
+        <p className="text-[11.5px] leading-relaxed text-bone-600">
+          No participants are added at creation. Public challenges are discovered on the Challenges tab; hidden ones are joined by invite only.
+        </p>
 
         {err && <p className="rounded-[10px] border border-coral-500/40 bg-coral-500/10 px-3 py-2 text-[13px] font-semibold text-coral-300">{err}</p>}
 
