@@ -287,6 +287,10 @@ export interface DetailData {
   member: Member | null;
   participants: { user_id: string; username: string; role: string; isYou: boolean }[];
   hiddenCount: number;
+  /** true when the current user owns this challenge */
+  owner: boolean;
+  /** users that can still be invited (owner only) — not members, no pending invite */
+  pendingInvites: { user_id: string; username: string }[];
   myStats: ExtendedStats | null;
   week: WeekDayView[];
   leaderboard: LeaderRow[];
@@ -547,7 +551,14 @@ const localApi = {
     if (WORKER_URL) return workerFetch("/challenge/enroll", { challengeId, userId, anonymous });
     await lag();
     const db = loadDB();
-    challengeById(db, challengeId);
+    const ch = challengeById(db, challengeId);
+    // hidden challenges are invite-only
+    if (ch.hidden && ch.owner_id !== userId) {
+      const accepted = db.invites.some(
+        (i) => i.challenge_id === challengeId && i.to_id === userId && i.status === "accepted",
+      );
+      if (!accepted) throw new Error("This challenge is hidden — you need an invite from the owner.");
+    }
     if (memberOf(db, challengeId, userId)) throw new Error("Already enrolled.");
     db.members.push({
       challenge_id: challengeId,
@@ -673,6 +684,20 @@ const localApi = {
         isYou: m.user_id === userId,
       })),
       hiddenCount: allMembers.length - visible.length,
+      owner: member?.role === "owner",
+      pendingInvites:
+        member?.role === "owner"
+          ? db.users
+              .filter(
+                (u) =>
+                  u.user_id !== userId &&
+                  !allMembers.some((m) => m.user_id === u.user_id) &&
+                  !db.invites.some(
+                    (i) => i.challenge_id === challengeId && i.to_id === u.user_id && i.status === "pending",
+                  ),
+              )
+              .map((u) => ({ user_id: u.user_id, username: u.username }))
+          : [],
       myStats: member ? statsFor(db, ch, userId, member.joined_at) : null,
       week,
       leaderboard: rows,

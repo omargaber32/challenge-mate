@@ -4,6 +4,7 @@ import type { User } from "../types";
 import { Field, Reveal, btnGhost, btnSolid, cardCls, inputCls, useToast } from "../components/ui";
 import { ACHIEVEMENT_ICONS, BellIcon, CheckIcon, FlameFill, LockIcon, LogoutIcon } from "../components/icons";
 import { fmtDay, fmtMinutes } from "../utils/dates";
+import { notifyPermission, notifySupported, requestNotifyPermission } from "../utils/notify";
 
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
   return (
@@ -34,6 +35,15 @@ export default function ProfilePage({ user, onLogout }: { user: User; onLogout: 
   const [friendPrefs, setFriendPrefs] = useState<{ friend_id: string; enabled: boolean }[]>([]);
   const [confirmReset, setConfirmReset] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [perm, setPerm] = useState(() => notifyPermission());
+
+  const enableOs = async () => {
+    const res = await requestNotifyPermission();
+    setPerm(res);
+    if (res === "granted") toast.push("OS notifications enabled 🔔");
+    else if (res === "denied") toast.push("Blocked — allow notifications for this site in your browser settings.", "warn");
+    else toast.push("This browser doesn't support OS notifications.", "warn");
+  };
 
   useEffect(() => {
     api.getProfile(user.user_id).then((d) => {
@@ -156,6 +166,47 @@ export default function ProfilePage({ user, onLogout }: { user: User; onLogout: 
               );
             })}
           </div>
+        </section>
+      </Reveal>
+
+      {/* OS notifications */}
+      <Reveal delay={100}>
+        <section className={`${cardCls} p-5`}>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="font-display flex items-center gap-2 text-lg font-extrabold text-bone-100">
+                <BellIcon className="h-5 w-5 text-ember-400" /> OS notifications
+              </h2>
+              <p className="mt-1 text-[12px] leading-relaxed text-bone-600">
+                Real system notifications for task reminders, owner broadcasts and friend activity — while the app is
+                open in this browser.
+              </p>
+            </div>
+            <span
+              className={`shrink-0 rounded-full border px-2.5 py-1 text-[10.5px] font-extrabold uppercase tracking-[0.12em] ${
+                perm === "granted"
+                  ? "border-leaf-500/45 bg-leaf-500/10 text-leaf-300"
+                  : perm === "denied"
+                    ? "border-coral-500/45 bg-coral-500/10 text-coral-300"
+                    : "border-gold-500/45 bg-gold-400/10 text-gold-300"
+              }`}
+            >
+              {!notifySupported() ? "unsupported" : perm}
+            </span>
+          </div>
+          <button
+            className={`${btnSolid} mt-4 w-full`}
+            onClick={enableOs}
+            disabled={!notifySupported() || perm === "granted"}
+          >
+            {perm === "granted" ? "Notifications enabled" : "Enable OS notifications"}
+          </button>
+          {perm === "denied" && (
+            <p className="mt-2.5 rounded-[10px] border border-coral-500/35 bg-coral-500/8 px-3 py-2 text-[12px] font-semibold leading-relaxed text-coral-300">
+              Your browser blocked this site. Open the padlock/site icon in the address bar → Notifications → Allow,
+              then reload.
+            </p>
+          )}
         </section>
       </Reveal>
 

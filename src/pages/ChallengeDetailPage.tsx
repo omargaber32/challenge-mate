@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type DetailData } from "../services/api";
 import type { User } from "../types";
-import { Reveal, StatusChip, StreakFlame, btnGhost, btnSolid, cardCls, useCountUp, useToast } from "../components/ui";
-import { CHALLENGE_ICONS, CheckIcon, ChevronLeft, UmbrellaIcon, UsersIcon } from "../components/icons";
+import { Field, Modal, Reveal, StatusChip, StreakFlame, btnGhost, btnSolid, cardCls, inputCls, useCountUp, useToast } from "../components/ui";
+import { BellIcon, CHALLENGE_ICONS, CheckIcon, ChevronLeft, LockIcon, UmbrellaIcon, UsersIcon, XIcon } from "../components/icons";
 import { fmtDay, fmtRange, WEEKDAY_FULL } from "../utils/dates";
 
 function StatTile({ label, value, suffix, tone }: { label: string; value: number; suffix?: string; tone?: string }) {
@@ -38,10 +38,101 @@ export default function ChallengeDetailPage({
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  // owner tools
+  const [confirmKind, setConfirmKind] = useState<"end" | "delete" | null>(null);
+  const [typedName, setTypedName] = useState("");
+  const [showNotify, setShowNotify] = useState(false);
+  const [notifyMsg, setNotifyMsg] = useState("");
+  const [notifyMode, setNotifyMode] = useState<"all" | "select">("all");
+  const [notifySel, setNotifySel] = useState<string[]>([]);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteSel, setInviteSel] = useState<string[]>([]);
+  // member tools
+  const [showLeave, setShowLeave] = useState(false);
+
   const load = useCallback(() => {
     api.getChallengeDetail(user.user_id, challengeId).then(setData);
   }, [user.user_id, challengeId]);
   useEffect(load, [load]);
+
+  const runConfirm = async () => {
+    if (!data) return;
+    setBusy(true);
+    try {
+      if (confirmKind === "end") {
+        await api.endChallenge(user.user_id, challengeId, typedName);
+        toast.push(`“${data.challenge.name}” ended — results are preserved.`, "info");
+      } else {
+        await api.deleteChallenge(user.user_id, challengeId, typedName);
+        toast.push(`“${data.challenge.name}” deleted permanently.`, "info");
+      }
+      setConfirmKind(null);
+      setTypedName("");
+      onBack();
+    } catch (ex) {
+      toast.push(ex instanceof Error ? ex.message : "Action failed.", "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runNotify = async () => {
+    setBusy(true);
+    try {
+      const targets = notifyMode === "all" ? "all" : notifySel;
+      await api.notifyParticipants(user.user_id, challengeId, notifyMsg, targets);
+      toast.push(notifyMode === "all" ? "Broadcast sent to all participants 📣" : `Sent to ${notifySel.length} participant${notifySel.length === 1 ? "" : "s"} 📣`);
+      setShowNotify(false);
+      setNotifyMsg("");
+      setNotifySel([]);
+    } catch (ex) {
+      toast.push(ex instanceof Error ? ex.message : "Could not send.", "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runInvite = async () => {
+    setBusy(true);
+    try {
+      const res = await api.sendInvite(user.user_id, challengeId, inviteSel);
+      toast.push(`${res.sent} invite${res.sent === 1 ? "" : "s"} sent — they'll see it on the Challenges tab.`);
+      setShowInvite(false);
+      setInviteSel([]);
+      load();
+    } catch (ex) {
+      toast.push(ex instanceof Error ? ex.message : "Could not send invites.", "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runRemove = async (targetId: string, name: string) => {
+    setBusy(true);
+    try {
+      await api.removeParticipant(user.user_id, challengeId, targetId);
+      toast.push(`${name} removed from the challenge.`, "info");
+      load();
+    } catch (ex) {
+      toast.push(ex instanceof Error ? ex.message : "Could not remove.", "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const runLeave = async () => {
+    setBusy(true);
+    try {
+      await api.leaveChallenge(user.user_id, challengeId);
+      toast.push(`You left ${data?.challenge.name ?? "the challenge"}.`, "info");
+      setShowLeave(false);
+      onBack();
+    } catch (ex) {
+      toast.push(ex instanceof Error ? ex.message : "Could not leave.", "warn");
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const enroll = async (anonymous: boolean) => {
     setBusy(true);
@@ -138,9 +229,60 @@ export default function ChallengeDetailPage({
               <UmbrellaIcon className="h-3.5 w-3.5" /> {WEEKDAY_FULL[ch.main_vacation_day]} off
             </span>
             <span>{ch.optional_vacations_per_week} optional vac./week</span>
+            {ch.hidden && (
+              <span className="inline-flex items-center gap-1 text-gold-300">
+                <LockIcon className="h-3.5 w-3.5" /> Hidden · invite-only
+              </span>
+            )}
           </div>
         </header>
       </Reveal>
+
+      {/* owner management panel */}
+      {data.owner && (
+        <Reveal delay={40}>
+          <section className={`${cardCls} overflow-hidden`}>
+            <div className="flex items-center justify-between border-b border-ink-700 bg-ink-800/60 px-5 py-3">
+              <h2 className="font-display flex items-center gap-2 text-[15px] font-extrabold text-bone-100">
+                <LockIcon className="h-4 w-4 text-ember-400" /> Owner tools
+              </h2>
+              <span className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-bone-600">you own this challenge</span>
+            </div>
+            <div className="grid gap-2.5 p-5 sm:grid-cols-2">
+              <button className={btnSolid} onClick={() => { setShowNotify(true); setNotifyMode("all"); }}>
+                <BellIcon className="h-4 w-4" /> Notify participants
+              </button>
+              <button className={btnGhost} onClick={() => { setShowInvite(true); setInviteSel(data.pendingInvites.map((u) => u.user_id)); }}>
+                <UsersIcon className="h-4 w-4" /> Invite people
+              </button>
+              <button className={btnGhost} disabled={ended} onClick={() => { setConfirmKind("end"); setTypedName(""); }}>
+                End challenge now
+              </button>
+              <button
+                className="inline-flex items-center justify-center gap-2 rounded-[10px] border border-coral-500/50 bg-coral-500/10 px-4 py-3 text-sm font-bold text-coral-300 transition hover:bg-coral-500/20 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40"
+                onClick={() => { setConfirmKind("delete"); setTypedName(""); }}
+              >
+                <XIcon className="h-4 w-4" /> Delete challenge
+              </button>
+            </div>
+            <p className="border-t border-ink-700 px-5 py-2.5 text-[11px] font-semibold leading-relaxed text-bone-600">
+              Broadcasts have a 12-hour slow mode. Ending keeps all history; deleting wipes every row this challenge wrote.
+            </p>
+          </section>
+        </Reveal>
+      )}
+
+      {/* member → leave */}
+      {data.member && !data.owner && (
+        <Reveal delay={40}>
+          <button
+            onClick={() => setShowLeave(true)}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-[12px] border border-coral-500/40 bg-coral-500/8 px-4 py-3 text-sm font-bold text-coral-300 transition hover:bg-coral-500/15 active:scale-[0.98]"
+          >
+            Leave this challenge
+          </button>
+        </Reveal>
+      )}
 
       {/* not a member → enroll inline */}
       {!data.member && !ended && (
@@ -259,9 +401,20 @@ export default function ChallengeDetailPage({
           </h2>
           <div className="mt-3 flex flex-wrap gap-2">
             {data.participants.map((p) => (
-              <span key={p.user_id} className={`rounded-full border px-3 py-1.5 text-xs font-bold capitalize ${p.isYou ? "border-ember-400/50 text-ember-300" : "border-ink-500 text-bone-300"}`}>
+              <span key={p.user_id} className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-bold capitalize ${p.isYou ? "border-ember-400/50 text-ember-300" : "border-ink-500 text-bone-300"}`}>
                 {p.username}
-                {p.role === "owner" && <span className="ml-1.5 text-[9.5px] uppercase tracking-wider text-bone-600">owner</span>}
+                {p.role === "owner" && <span className="text-[9.5px] uppercase tracking-wider text-bone-600">owner</span>}
+                {data.owner && !p.isYou && (
+                  <button
+                    onClick={() => runRemove(p.user_id, p.username)}
+                    disabled={busy}
+                    aria-label={`Remove ${p.username}`}
+                    title={`Remove ${p.username} from this challenge`}
+                    className="rounded-full border border-ink-500 p-0.5 text-bone-500 transition hover:border-coral-400/70 hover:text-coral-300 active:scale-90 disabled:opacity-40"
+                  >
+                    <XIcon className="h-3 w-3" />
+                  </button>
+                )}
               </span>
             ))}
             {data.hiddenCount > 0 && (
@@ -327,6 +480,171 @@ export default function ChallengeDetailPage({
           </section>
         </Reveal>
       )}
+
+      {/* end / delete confirmation — type the challenge name (README-style safety) */}
+      <Modal
+        open={confirmKind !== null}
+        onClose={() => !busy && setConfirmKind(null)}
+        title={confirmKind === "delete" ? "Delete challenge" : "End challenge now"}
+      >
+        {data && (
+          <div className="space-y-4">
+            <p className="text-sm leading-relaxed text-bone-300">
+              {confirmKind === "delete" ? (
+                <>This permanently deletes <strong className="text-bone-100">{data.challenge.name}</strong> and every
+                task, vacation, penalty and invite it ever wrote to the sheet. There is no undo.</>
+              ) : (
+                <>This sets the end date of <strong className="text-bone-100">{data.challenge.name}</strong> to
+                yesterday. Everything already recorded stays — leaderboards and penalties freeze as final results.</>
+              )}
+            </p>
+            <Field label={`Type “${data.challenge.name}” to confirm`}>
+              <input
+                className={inputCls}
+                value={typedName}
+                onChange={(e) => setTypedName(e.target.value)}
+                placeholder={data.challenge.name}
+                autoFocus
+              />
+            </Field>
+            <div className="grid grid-cols-2 gap-2.5">
+              <button className={btnGhost} onClick={() => setConfirmKind(null)} disabled={busy}>
+                Cancel
+              </button>
+              <button
+                className={`inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-sm font-bold transition active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 ${
+                  confirmKind === "delete"
+                    ? "bg-coral-500 text-ink-950 hover:bg-coral-400"
+                    : "bg-gold-400 text-ink-950 hover:bg-gold-300"
+                }`}
+                onClick={runConfirm}
+                disabled={busy || typedName !== data.challenge.name}
+              >
+                {busy ? "Working…" : confirmKind === "delete" ? "Delete forever" : "End now"}
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* notify participants (12h slow mode) */}
+      <Modal open={showNotify} onClose={() => !busy && setShowNotify(false)} title="Notify participants">
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            {(["all", "select"] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setNotifyMode(m)}
+                className={`rounded-full border px-3.5 py-1.5 text-xs font-bold transition ${
+                  notifyMode === m
+                    ? "border-ember-400 bg-ember-500/15 text-ember-300"
+                    : "border-ink-500 text-bone-500 hover:text-bone-300"
+                }`}
+              >
+                {m === "all" ? "Everyone" : "Pick participants"}
+              </button>
+            ))}
+          </div>
+          {notifyMode === "select" && (
+            <div className="max-h-44 space-y-2 overflow-y-auto rounded-[12px] border border-ink-600 bg-ink-900 p-3">
+              {data.participants.filter((p) => !p.isYou).length === 0 && (
+                <p className="text-xs font-semibold text-bone-600">No other participants yet.</p>
+              )}
+              {data.participants.filter((p) => !p.isYou).map((p) => (
+                <label key={p.user_id} className="flex cursor-pointer items-center gap-3">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-[#FF7A33]"
+                    checked={notifySel.includes(p.user_id)}
+                    onChange={(e) =>
+                      setNotifySel((v) => (e.target.checked ? [...v, p.user_id] : v.filter((x) => x !== p.user_id)))
+                    }
+                  />
+                  <span className="text-sm font-semibold capitalize text-bone-300">{p.username}</span>
+                </label>
+              ))}
+            </div>
+          )}
+          <Field label="Message">
+            <textarea
+              className={`${inputCls} min-h-[88px]`}
+              value={notifyMsg}
+              onChange={(e) => setNotifyMsg(e.target.value)}
+              placeholder="e.g. New book starts Monday — 30 pages minimum this week!"
+            />
+          </Field>
+          <p className="text-[11.5px] leading-relaxed text-bone-600">
+            Recipients see this in their Home feed and get an OS notification (when enabled).
+            <strong className="text-gold-300/90"> Slow mode:</strong> one broadcast per challenge every 12 hours.
+          </p>
+          <button
+            className={`${btnSolid} w-full`}
+            onClick={runNotify}
+            disabled={busy || !notifyMsg.trim() || (notifyMode === "select" && notifySel.length === 0)}
+          >
+            <BellIcon className="h-4 w-4" /> {busy ? "Sending…" : "Send broadcast"}
+          </button>
+        </div>
+      </Modal>
+
+      {/* invite people (hidden-challenge flow) */}
+      <Modal open={showInvite} onClose={() => !busy && setShowInvite(false)} title="Invite people">
+        <div className="space-y-4">
+          {data.pendingInvites.length === 0 ? (
+            <p className="text-sm font-semibold text-bone-600">
+              Everyone is already a participant or has a pending invite. 🎉
+            </p>
+          ) : (
+            <>
+              <div className="max-h-52 space-y-2 overflow-y-auto rounded-[12px] border border-ink-600 bg-ink-900 p-3">
+                {data.pendingInvites.map((u) => (
+                  <label key={u.user_id} className="flex cursor-pointer items-center gap-3">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-[#FF7A33]"
+                      checked={inviteSel.includes(u.user_id)}
+                      onChange={(e) =>
+                        setInviteSel((v) => (e.target.checked ? [...v, u.user_id] : v.filter((x) => x !== u.user_id)))
+                      }
+                    />
+                    <span className="text-sm font-semibold capitalize text-bone-300">{u.username}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11.5px] leading-relaxed text-bone-600">
+                Invited people see your invite on their Challenges tab and can accept or decline.
+                {data.challenge.hidden && " This challenge stays hidden — invites are the only way in."}
+              </p>
+              <button className={`${btnSolid} w-full`} onClick={runInvite} disabled={busy || inviteSel.length === 0}>
+                <UsersIcon className="h-4 w-4" /> Send {inviteSel.length || ""} invite{inviteSel.length === 1 ? "" : "s"}
+              </button>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      {/* leave confirmation */}
+      <Modal open={showLeave} onClose={() => !busy && setShowLeave(false)} title="Leave challenge">
+        <div className="space-y-4">
+          <p className="text-sm leading-relaxed text-bone-300">
+            Leave <strong className="text-bone-100">{data?.challenge.name}</strong>? Your recorded history stays in the
+            sheet, but the challenge disappears from your Home and your streak no longer updates. You can re-enroll
+            later{data?.challenge.hidden ? " if the owner invites you again" : ""}.
+          </p>
+          <div className="grid grid-cols-2 gap-2.5">
+            <button className={btnGhost} onClick={() => setShowLeave(false)} disabled={busy}>
+              Stay
+            </button>
+            <button
+              className="inline-flex items-center justify-center rounded-[10px] bg-coral-500 px-4 py-3 text-sm font-bold text-ink-950 transition hover:bg-coral-400 active:scale-[0.97] disabled:opacity-40"
+              onClick={runLeave}
+              disabled={busy}
+            >
+              Leave
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

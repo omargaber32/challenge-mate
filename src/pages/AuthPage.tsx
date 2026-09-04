@@ -4,6 +4,7 @@ import type { User } from "../types";
 import { btnSolid, Field, inputCls, Spinner, cardCls } from "../components/ui";
 import { FlameFill, TrophyIcon, UmbrellaIcon, UsersIcon } from "../components/icons";
 import { Ambient, Wordmark } from "../components/chrome";
+import { isSheetsConfigured } from "../services/googleSheets";
 
 const DEMO_ACCOUNTS = ["omar", "ahmed", "sara"];
 
@@ -187,6 +188,7 @@ export default function AuthPage({ onAuthed }: { onAuthed: (u: User) => void }) 
               )}
             </form>
 
+            {!isSheetsConfigured() && (
             <div className="mt-6 border-t border-ink-700 pt-4">
               <p className="mb-2.5 text-[11px] font-bold uppercase tracking-[0.14em] text-bone-600">
                 Demo crew · password <span className="text-bone-300">demo123</span>
@@ -204,11 +206,13 @@ export default function AuthPage({ onAuthed }: { onAuthed: (u: User) => void }) 
                 ))}
               </div>
             </div>
+            )}
           </div>
 
           <p className="mt-4 text-center text-[11.5px] leading-relaxed text-bone-600">
-            Frontend on GitHub Pages · API on Cloudflare Workers · data in a private Google Sheet.
-            This demo runs the same API contract locally.
+            {isSheetsConfigured()
+              ? "Connected to your Google Sheet via the Cloudflare Worker. Accounts live in the Users tab."
+              : "Frontend on GitHub Pages · API on Cloudflare Workers · data in a private Google Sheet. This demo runs the same API contract locally."}
           </p>
         </div>
       </div>

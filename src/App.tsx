@@ -4,6 +4,7 @@ import type { User } from "./types";
 import { ToastProvider } from "./components/ui";
 import { Ambient, BottomNav, Wordmark, type TabId } from "./components/chrome";
 import { FlameFill } from "./components/icons";
+import { startNotifyEngine, stopNotifyEngine } from "./utils/notify";
 import AuthPage from "./pages/AuthPage";
 import HomePage from "./pages/HomePage";
 import ChallengesPage from "./pages/ChallengesPage";
@@ -38,9 +39,14 @@ export default function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
-    setUser(api.sessionUser());
+    const u = api.sessionUser();
+    setUser(u);
+    if (u) startNotifyEngine(u);
     const t = setTimeout(() => setBooting(false), 850);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(t);
+      stopNotifyEngine();
+    };
   }, []);
 
   useEffect(() => {
@@ -48,6 +54,7 @@ export default function App() {
   }, [tab, detailId]);
 
   const logout = () => {
+    stopNotifyEngine();
     api.logout();
     setUser(null);
     setTab("home");
@@ -61,7 +68,8 @@ export default function App() {
       {user ? (
         <div className="relative min-h-dvh">
           <Ambient />
-          <div className="relative z-10 mx-auto min-h-dvh w-full max-w-[430px] border-ink-700/70 px-4 pb-32 pt-4 sm:border-x">
+          {/* pb-44 keeps the last controls clear of the floating bottom nav */}
+          <div className="relative z-10 mx-auto min-h-dvh w-full max-w-[430px] border-ink-700/70 px-4 pb-44 pt-4 sm:border-x">
             {detailId ? (
               <ChallengeDetailPage user={user} challengeId={detailId} onBack={() => setDetailId(null)} />
             ) : tab === "home" ? (
@@ -82,7 +90,12 @@ export default function App() {
           {!detailId && <BottomNav tab={tab} onChange={setTab} />}
         </div>
       ) : (
-        <AuthPage onAuthed={setUser} />
+        <AuthPage
+          onAuthed={(u) => {
+            setUser(u);
+            startNotifyEngine(u);
+          }}
+        />
       )}
     </ToastProvider>
   );

@@ -578,6 +578,14 @@ async function handle_(action, p) {
   }
 
   if (action === "enroll") {
+    const chE = await challenge_(p.challengeId);
+    if (!chE) return { error: "Challenge not found" };
+    // hidden challenges are invite-only: joining is only possible through an accepted invite
+    if (chE.hidden && chE.owner_id !== p.userId) {
+      const inv = await table_("Invites");
+      const ok = inv.some((i) => i.challenge_id === p.challengeId && i.to_id === p.userId && String(i.status) === "accepted");
+      if (!ok) return { error: "This challenge is hidden — you need an invite from the owner." };
+    }
     const mem = await members_();
     if (mem.some((m) => m.challenge_id === p.challengeId && m.user_id === p.userId))
       return { error: "Already enrolled." };
@@ -787,6 +795,16 @@ async function handle_(action, p) {
       participants: await Promise.all(visible.map(async (m) => ({ user_id: m.user_id,
         username: await usernameOf_(m.user_id), role: String(m.role || "member"), isYou: m.user_id === p.userId }))),
       hiddenCount: all.length - visible.length,
+      owner: mine ? String(mine.role) === "owner" : false,
+      pendingInvites: !mine || String(mine.role) !== "owner" ? [] : await (async () => {
+        const users = await table_("Users");
+        const inv = await table_("Invites");
+        return users
+          .filter((u) => u.user_id !== p.userId &&
+            !all.some((m) => m.user_id === u.user_id) &&
+            !inv.some((i) => i.challenge_id === p.challengeId && i.to_id === u.user_id && String(i.status) === "pending"))
+          .map((u) => ({ user_id: u.user_id, username: String(u.username) }));
+      })(),
       myStats: mine ? await computeStats_(ch, p.userId, mine.joined_at) : null,
       week: weekArr,
       leaderboard: lb,

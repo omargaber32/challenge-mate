@@ -24,9 +24,12 @@ import {
   FlameFill,
   ShuffleIcon,
   UmbrellaIcon,
+  XIcon,
 } from "../components/icons";
+import { dismissAnnouncement, dismissedAnnouncements, notifyPermission, requestNotifyPermission } from "../utils/notify";
 import {
   WEEKDAY_FULL,
+  fmtDay,
   fmtDayLong,
   fmtMinutes,
   greeting,
@@ -213,6 +216,35 @@ export default function HomePage({
   const [summary, setSummary] = useState("");
   const [busy, setBusy] = useState(false);
   const [confettiKey, setConfettiKey] = useState(0);
+  const [hiddenAnns, setHiddenAnns] = useState<string[]>(() => dismissedAnnouncements());
+
+  const bellTap = async () => {
+    const perm = notifyPermission();
+    if (perm === "unsupported") {
+      toast.push("This browser doesn't support OS notifications.", "warn");
+      return;
+    }
+    if (perm === "granted") {
+      toast.push("OS notifications are already on.", "info");
+      return;
+    }
+    if (perm === "denied") {
+      toast.push("Notifications are blocked — allow them in your browser's site settings.", "warn");
+      return;
+    }
+    const res = await requestNotifyPermission();
+    toast.push(
+      res === "granted"
+        ? "OS notifications enabled — reminders, broadcasts and friend activity will pop up."
+        : "Permission not granted — you can retry from Profile.",
+      res === "granted" ? "success" : "warn",
+    );
+  };
+
+  const hideAnn = (id: string) => {
+    dismissAnnouncement(id);
+    setHiddenAnns((v) => [...v, id]);
+  };
 
   const load = useCallback(() => {
     api.getHome(user.user_id).then((d) => {
@@ -281,12 +313,15 @@ export default function HomePage({
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={() => toast.push("Task reminders live in Profile → Notifications.", "info")}
-            aria-label="Notifications"
+            onClick={bellTap}
+            aria-label="Enable OS notifications"
+            title={notifyPermission() === "granted" ? "OS notifications on" : "Enable OS notifications"}
             className="relative rounded-[12px] border border-ink-600 bg-ink-850 p-2.5 text-bone-400 transition hover:border-ember-400/60 hover:text-ember-300"
           >
             <BellIcon className="h-5 w-5" />
-            <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-ember-400" />
+            {notifyPermission() !== "granted" && (
+              <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-ember-400" />
+            )}
           </button>
           <button
             onClick={onGoProfile}
@@ -334,6 +369,39 @@ export default function HomePage({
               </button>
             )}
           </div>
+        </Reveal>
+      )}
+
+      {/* owner broadcasts (README-style announcements feed) */}
+      {data && data.announcements.filter((a) => !hiddenAnns.includes(a.announcement_id)).length > 0 && (
+        <Reveal delay={90}>
+          <section className="space-y-2.5">
+            <h2 className="font-display flex items-center gap-2 text-[15px] font-extrabold text-bone-100">
+              <BellIcon className="h-4 w-4 text-ember-400" /> From your owners
+            </h2>
+            {data.announcements
+              .filter((a) => !hiddenAnns.includes(a.announcement_id))
+              .map((a) => (
+                <div
+                  key={a.announcement_id}
+                  className="relative overflow-hidden rounded-[14px] border border-ember-500/30 bg-gradient-to-br from-ember-500/10 via-ink-850 to-ink-850 p-4 pr-10"
+                >
+                  <span className="absolute inset-y-0 left-0 w-[3px] bg-ember-500/70" />
+                  <p className="text-[10.5px] font-bold uppercase tracking-[0.14em] text-ember-300/90">
+                    {a.challengeName} · {a.fromName}
+                  </p>
+                  <p className="mt-1.5 text-[13.5px] font-semibold leading-relaxed text-bone-100">{a.message}</p>
+                  <p className="mt-1 text-[10.5px] font-semibold text-bone-600">{fmtDay(a.createdAt)}</p>
+                  <button
+                    onClick={() => hideAnn(a.announcement_id)}
+                    aria-label="Dismiss"
+                    className="absolute right-2.5 top-2.5 rounded-lg border border-ink-600 p-1 text-bone-600 transition hover:border-coral-400/60 hover:text-coral-300"
+                  >
+                    <XIcon className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ))}
+          </section>
         </Reveal>
       )}
 
