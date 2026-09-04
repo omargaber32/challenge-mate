@@ -38,7 +38,7 @@ import type {
  * stores data in the browser — set the URL to make Google Sheets (via the
  * Worker) the real database. Only the login session is ever stored locally.
  */
-export const SHEETS_API_URL = "";
+export const SHEETS_API_URL = "https://challenge-mate.omar-gaber323.workers.dev/";
 
 export function isSheetsConfigured(): boolean {
   // any deployed worker / API endpoint over https counts as configured
