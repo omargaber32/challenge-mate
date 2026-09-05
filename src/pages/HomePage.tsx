@@ -300,14 +300,14 @@ export default function HomePage({
   const allClear = data && data.tasks.length > 0 && pending === 0 && missedToday === 0;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 md:grid md:grid-cols-[minmax(0,1fr)_280px] md:items-start md:gap-6 md:space-y-0">
       <ConfettiLayer fireKey={confettiKey} />
 
       {/* header */}
-      <header className="flex items-center justify-between gap-3 pt-1">
+      <header className="flex items-center justify-between gap-3 pt-1 md:col-span-2">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-bone-600">{fmtDayLong(todayKey())}</p>
-          <h1 className="font-display mt-1 text-[26px] font-extrabold tracking-tight text-bone-100">
+          <h1 className="font-display mt-1 text-[26px] font-extrabold tracking-tight text-bone-100 md:text-[32px]">
             {greeting()}, <span className="text-ember-400">{user.username}</span>
           </h1>
         </div>
@@ -334,7 +334,7 @@ export default function HomePage({
       </header>
 
       {quote && (
-        <Reveal>
+        <Reveal className="md:sticky md:top-6 md:col-start-2 md:row-start-1">
           <QuoteCard
             quote={quote}
             onShuffle={() => api.getQuote().then(setQuote)}
@@ -344,7 +344,7 @@ export default function HomePage({
 
       {/* today strip */}
       {data && (
-        <Reveal delay={60}>
+        <Reveal delay={60} className="md:col-start-1 md:row-start-1">
           <div className="flex items-center justify-between rounded-[14px] border border-ink-600 bg-ink-800/70 px-4 py-3">
             <span className="flex items-center gap-2 text-[13px] font-bold text-bone-300">
               <FlameFill className="h-4 w-4 text-ember-500" />
@@ -374,7 +374,7 @@ export default function HomePage({
 
       {/* owner broadcasts (README-style announcements feed) */}
       {data && data.announcements.filter((a) => !hiddenAnns.includes(a.announcement_id)).length > 0 && (
-        <Reveal delay={90}>
+        <Reveal delay={90} className="md:col-start-2 md:row-start-2">
           <section className="space-y-2.5">
             <h2 className="font-display flex items-center gap-2 text-[15px] font-extrabold text-bone-100">
               <BellIcon className="h-4 w-4 text-ember-400" /> From your owners
@@ -407,7 +407,7 @@ export default function HomePage({
 
       {/* loading skeleton */}
       {!data && (
-        <div className="space-y-4">
+        <div className="space-y-4 md:col-start-1 md:row-start-2">
           {[0, 1].map((i) => (
             <div key={i} className={`${cardCls} animate-pulse p-5`}>
               <div className="h-11 w-2/3 rounded-lg bg-ink-700" />
@@ -419,7 +419,7 @@ export default function HomePage({
       )}
 
       {/* task cards */}
-      <section className="space-y-4">
+      <section className="space-y-4 md:col-start-1 md:row-start-2">
         <div className="flex items-baseline justify-between">
           <h2 className="font-display text-lg font-extrabold text-bone-100">Today’s challenges</h2>
           <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-bone-600">

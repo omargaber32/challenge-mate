@@ -93,14 +93,14 @@ export default function ProgressPage({ user }: { user: User }) {
   const s = data?.stats;
 
   return (
-    <div className="space-y-5">
-      <header className="pt-1">
+    <div className="space-y-5 md:grid md:grid-cols-[290px_minmax(0,1fr)] md:items-start md:gap-6 md:space-y-0">
+      <header className="pt-1 md:col-span-2">
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-bone-600">How am I doing?</p>
-        <h1 className="font-display mt-1 text-[26px] font-extrabold tracking-tight text-bone-100">Progress</h1>
+        <h1 className="font-display mt-1 text-[26px] font-extrabold tracking-tight text-bone-100 md:text-[32px]">Progress</h1>
       </header>
 
       {/* challenge selector */}
-      <div className="flex gap-2 overflow-x-auto pb-1" style={{ scrollbarWidth: "none" }}>
+      <div className="flex gap-2 overflow-x-auto pb-1 md:col-span-2" style={{ scrollbarWidth: "none" }}>
         {joined?.map((c) => (
           <button
             key={c.challenge.challenge_id}
@@ -128,7 +128,7 @@ export default function ProgressPage({ user }: { user: User }) {
       {data && s && (
         <>
           {/* streak hero */}
-          <Reveal>
+          <Reveal className="md:col-start-1 md:row-start-2">
             <div className={`${cardCls} relative overflow-hidden p-5`}>
               <span className="pointer-events-none absolute inset-0" style={{ background: "radial-gradient(26rem 14rem at 8% -30%, rgba(255,122,51,0.16), transparent 60%)" }} />
               <div className="relative flex items-center justify-between">
@@ -152,7 +152,7 @@ export default function ProgressPage({ user }: { user: User }) {
           </Reveal>
 
           {/* stat tiles */}
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 md:col-start-1 md:row-start-3">
             <StatTile label="Completion" value={s.applicableDays > 0 ? s.completionPct : 0} suffix={s.applicableDays > 0 ? "%" : ""} tone="text-leaf-300" delay={0} />
             <StatTile label="Tasks done" value={s.done} delay={50} />
             <StatTile label="Missed" value={s.missed} tone={s.missed > 0 ? "text-coral-300" : undefined} delay={100} />
@@ -164,7 +164,7 @@ export default function ProgressPage({ user }: { user: User }) {
           </div>
 
           {/* calendar (README §15) */}
-          <Reveal delay={80}>
+          <Reveal delay={80} className="md:col-start-2 md:row-span-2 md:row-start-2">
             <section className={`${cardCls} p-5`}>
               <div className="flex items-center justify-between">
                 <h2 className="font-display text-lg font-extrabold text-bone-100">{fmtMonthYear(monthCursor.y, monthCursor.m)}</h2>
@@ -205,7 +205,7 @@ export default function ProgressPage({ user }: { user: User }) {
                         data.statuses[k]
                           ? CELL[data.statuses[k]]
                           : "border-ink-700 bg-ink-900/60 text-bone-600"
-                      } ${k === today ? "ring-2 ring-ember-400/80" : ""} ${data.statuses[k] ? "text-ink-950" : ""}`}
+                      } ${k === today ? "ring-2 ring-ember-400/80" : ""} ${data.statuses[k] ? "text-onaccent" : ""}`}
                       style={{ animation: "fade-in 0.45s ease both", animationDelay: `${i * 9}ms` }}
                     >
                       {Number(k.slice(8))}
@@ -226,7 +226,7 @@ export default function ProgressPage({ user }: { user: User }) {
           </Reveal>
 
           {/* friend progress (README §15) */}
-          <Reveal delay={140}>
+          <Reveal delay={140} className="md:col-span-2">
             <section className={`${cardCls} p-5`}>
               <h2 className="font-display text-lg font-extrabold text-bone-100">Friend progress</h2>
               <p className="mt-0.5 text-[12px] font-semibold text-bone-600">Anonymous participants stay hidden</p>

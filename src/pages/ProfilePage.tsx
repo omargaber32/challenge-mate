@@ -4,6 +4,7 @@ import type { User } from "../types";
 import { Field, Reveal, btnGhost, btnSolid, cardCls, inputCls, useToast } from "../components/ui";
 import { ACHIEVEMENT_ICONS, BellIcon, CheckIcon, FlameFill, LockIcon, LogoutIcon } from "../components/icons";
 import { fmtDay, fmtMinutes } from "../utils/dates";
+import { THEMES, THEME_KEY, applyTheme } from "../components/chrome";
 import { notifyPermission, notifySupported, requestNotifyPermission } from "../utils/notify";
 
 function Switch({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -36,6 +37,13 @@ export default function ProfilePage({ user, onLogout }: { user: User; onLogout: 
   const [confirmReset, setConfirmReset] = useState(false);
   const [busy, setBusy] = useState(false);
   const [perm, setPerm] = useState(() => notifyPermission());
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem(THEME_KEY) || "ember";
+    } catch {
+      return "ember";
+    }
+  });
 
   const enableOs = async () => {
     const res = await requestNotifyPermission();
@@ -86,7 +94,7 @@ export default function ProfilePage({ user, onLogout }: { user: User; onLogout: 
     <div className="space-y-5">
       <header className="pt-1">
         <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-bone-600">Who am I?</p>
-        <h1 className="font-display mt-1 text-[26px] font-extrabold tracking-tight text-bone-100">Profile</h1>
+        <h1 className="font-display mt-1 text-[26px] font-extrabold tracking-tight text-bone-100 md:text-[32px]">Profile</h1>
       </header>
 
       {/* identity */}
@@ -163,6 +171,52 @@ export default function ProfilePage({ user, onLogout }: { user: User; onLogout: 
                     {earned ? `Earned ${fmtDay(a.earned_at!)}` : a.def.requirement}
                   </p>
                 </div>
+              );
+            })}
+          </div>
+        </section>
+      </Reveal>
+
+      {/* appearance / themes */}
+      <Reveal delay={85}>
+        <section className={`${cardCls} p-5`}>
+          <h2 className="font-display text-lg font-extrabold text-bone-100">Appearance</h2>
+          <p className="mt-0.5 text-[12px] font-semibold text-bone-600">Four moods, one app. Saved on this device.</p>
+          <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {THEMES.map((t) => {
+              const active = theme === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    applyTheme(t.id);
+                    setTheme(t.id);
+                    toast.push(`${t.name} theme on`, "info");
+                  }}
+                  aria-pressed={active}
+                  className={`group rounded-[14px] border p-3 text-left transition-all duration-200 hover:-translate-y-0.5 ${
+                    active ? "border-ember-400/70 bg-ink-800/80" : "border-ink-600 bg-ink-900/60 hover:border-ink-500"
+                  }`}
+                >
+                  <span
+                    className="relative block h-10 w-full overflow-hidden rounded-[9px] border border-ink-600/60"
+                    style={{ background: t.swatch[0] }}
+                  >
+                    <span
+                      className="absolute -bottom-2 -right-2 h-8 w-8 rounded-full transition-transform duration-300 group-hover:scale-125"
+                      style={{ background: t.swatch[1] }}
+                    />
+                    {active && (
+                      <span className="absolute left-1.5 top-1.5 flex h-4.5 w-4.5 items-center justify-center rounded-full bg-ember-500 text-onaccent" style={{ width: 18, height: 18 }}>
+                        <CheckIcon className="h-3 w-3" />
+                      </span>
+                    )}
+                  </span>
+                  <span className={`font-display mt-2 block text-[13.5px] font-extrabold ${active ? "text-ember-300" : "text-bone-100"}`}>
+                    {t.name}
+                  </span>
+                  <span className="block text-[10.5px] font-semibold text-bone-600">{t.blurb}</span>
+                </button>
               );
             })}
           </div>

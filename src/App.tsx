@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "./services/api";
 import type { User } from "./types";
 import { ToastProvider } from "./components/ui";
-import { Ambient, BottomNav, Wordmark, type TabId } from "./components/chrome";
+import { Ambient, BottomNav, SideNav, Wordmark, applyTheme, THEME_KEY, type TabId } from "./components/chrome";
 import { FlameFill } from "./components/icons";
 import { startNotifyEngine, stopNotifyEngine } from "./utils/notify";
 import AuthPage from "./pages/AuthPage";
@@ -39,6 +39,13 @@ export default function App() {
   const [detailId, setDetailId] = useState<string | null>(null);
 
   useEffect(() => {
+    // theme (also set pre-paint by the inline script in index.html)
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      if (saved) applyTheme(saved);
+    } catch {
+      /* ignore */
+    }
     const u = api.sessionUser();
     setUser(u);
     if (u) startNotifyEngine(u);
@@ -66,28 +73,36 @@ export default function App() {
   return (
     <ToastProvider>
       {user ? (
-        <div className="relative min-h-dvh">
+        <div className="relative min-h-dvh md:pl-60">
           <Ambient />
-          {/* pb-44 keeps the last controls clear of the floating bottom nav */}
-          <div className="relative z-10 mx-auto min-h-dvh w-full max-w-[430px] border-ink-700/70 px-4 pb-44 pt-4 sm:border-x">
-            {detailId ? (
-              <ChallengeDetailPage user={user} challengeId={detailId} onBack={() => setDetailId(null)} />
-            ) : tab === "home" ? (
-              <HomePage
-                user={user}
-                onOpenChallenge={setDetailId}
-                onGoChallenges={() => setTab("challenges")}
-                onGoProfile={() => setTab("profile")}
-              />
-            ) : tab === "challenges" ? (
-              <ChallengesPage user={user} onOpen={setDetailId} />
-            ) : tab === "progress" ? (
-              <ProgressPage user={user} />
-            ) : (
-              <ProfilePage user={user} onLogout={logout} />
-            )}
+          <SideNav tab={tab} onChange={(t) => { setTab(t); setDetailId(null); }} username={user.username} connected={!!api.workerConfigured} />
+
+          {/*
+            Shell is a flex column: content grows, the mobile nav sits in-flow
+            after it (sticky while scrolling) — so page content can NEVER end
+            up underneath the bar.
+          */}
+          <div className="relative z-10 mx-auto flex min-h-dvh w-full max-w-[430px] flex-col md:max-w-[680px] lg:max-w-[760px]">
+            <main className="flex-1 px-4 pb-8 pt-4 md:px-8 md:pb-12 md:pt-8">
+              {detailId ? (
+                <ChallengeDetailPage user={user} challengeId={detailId} onBack={() => setDetailId(null)} />
+              ) : tab === "home" ? (
+                <HomePage
+                  user={user}
+                  onOpenChallenge={setDetailId}
+                  onGoChallenges={() => setTab("challenges")}
+                  onGoProfile={() => setTab("profile")}
+                />
+              ) : tab === "challenges" ? (
+                <ChallengesPage user={user} onOpen={setDetailId} />
+              ) : tab === "progress" ? (
+                <ProgressPage user={user} />
+              ) : (
+                <ProfilePage user={user} onLogout={logout} />
+              )}
+            </main>
+            {!detailId && <BottomNav tab={tab} onChange={setTab} />}
           </div>
-          {!detailId && <BottomNav tab={tab} onChange={setTab} />}
         </div>
       ) : (
         <AuthPage

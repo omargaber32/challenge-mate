@@ -16,7 +16,7 @@ import { FlameFill, XIcon } from "./icons";
 /* ------------------------------------------------------------------ */
 
 export const btnSolid =
-  "inline-flex items-center justify-center gap-2 rounded-[10px] bg-ember-500 px-4 py-3 text-sm font-bold text-ink-950 transition-all duration-200 hover:bg-ember-400 hover:shadow-[0_8px_28px_-8px_rgba(255,122,51,0.55)] active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40";
+  "inline-flex items-center justify-center gap-2 rounded-[10px] bg-ember-500 px-4 py-3 text-sm font-bold text-onaccent transition-all duration-200 hover:bg-ember-400 hover:shadow-[0_8px_28px_-8px_rgba(255,122,51,0.55)] active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40";
 
 export const btnGhost =
   "inline-flex items-center justify-center gap-2 rounded-[10px] border border-ink-500 bg-transparent px-4 py-3 text-sm font-semibold text-bone-300 transition-all duration-200 hover:border-ember-400/70 hover:text-ember-300 active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40";
@@ -169,11 +169,11 @@ export function Modal({
   if (!open) return null;
   return (
     <div className="fixed inset-0 z-[80] flex items-end justify-center sm:items-center">
-      <div className="modal-fade absolute inset-0 bg-ink-950/75 backdrop-blur-[3px]" onClick={onClose} />
+      <div className="modal-fade absolute inset-0 bg-scrim backdrop-blur-[3px]" onClick={onClose} />
       <div
         role="dialog"
         aria-modal="true"
-        className="sheet-rise relative max-h-[88dvh] w-full overflow-y-auto rounded-t-[22px] border border-ink-600 bg-ink-850 shadow-[0_-20px_80px_-20px_rgba(0,0,0,0.9)] sm:max-w-md sm:rounded-[18px]"
+        className="sheet-rise relative max-h-[88dvh] w-full overflow-y-auto rounded-t-[22px] border border-ink-600 bg-ink-850 shadow-[0_-20px_80px_-20px_rgba(0,0,0,0.9)] sm:max-w-lg sm:rounded-[18px]"
       >
         <div className="sticky top-0 z-10 flex items-center justify-between gap-4 border-b border-ink-700 bg-ink-850/95 px-5 py-4 backdrop-blur">
           <div className="font-display text-lg font-bold text-bone-100">{title}</div>
