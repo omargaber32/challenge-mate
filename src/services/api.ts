@@ -3,10 +3,10 @@
  *
  * Production topology:
  *
- *   Frontend (GitHub Pages) ──HTTPS──▶ Cloudflare Worker ──Sheets REST API──▶ Google Sheet
+ *   Frontend (GitHub Pages) ──HTTPS──▶ Cloudflare Worker ──▶ Cloudflare D1
  *
  * The Worker URL is hardcoded in ./googleSheets (SHEETS_API_URL). When it is
- * set, every method below is served straight from the Google Sheet via
+ * set, every method below is served straight from the D1 database via
  * `sheetsApi`. With no URL configured, a deterministic local engine — same
  * contract, in-browser persistence — keeps the app fully functional as a demo.
  *

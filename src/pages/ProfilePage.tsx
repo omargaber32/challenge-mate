@@ -355,11 +355,11 @@ export default function ProfilePage({ user, onLogout }: { user: User; onLogout: 
           <div className="mt-3 rounded-[12px] border border-ink-600 bg-ink-900 px-3.5 py-3">
             <p className="flex items-center gap-2 text-[13px] font-bold text-bone-100">
               <span className={`h-2 w-2 rounded-full ${api.workerConfigured ? "bg-leaf-400" : "bg-gold-400"}`} />
-              {api.workerConfigured ? "Google Sheets · live" : "Local demo · in-browser"}
+              {api.workerConfigured ? "Cloudflare D1 · live" : "Local demo · in-browser"}
             </p>
             <p className="mt-1.5 text-[12px] leading-relaxed text-bone-600">
               {api.workerConfigured
-                ? "Every account, challenge, task, streak and penalty is stored in the connected Google Sheet through the Cloudflare Worker. Only your login session is kept in this browser."
+                ? "Every account, challenge, task, streak and penalty is stored in the connected Cloudflare D1 database through the Worker. Only your login session is kept in this browser."
                 : "The backend endpoint is hardcoded in src/services/googleSheets.ts → SHEETS_API_URL. Paste your Cloudflare Worker URL there and rebuild to go live. Until then, demo data stays in this browser."}
             </p>
             <p className="mt-2 truncate rounded-lg border border-ink-700 bg-ink-950 px-2.5 py-1.5 font-mono text-[10.5px] text-bone-500">
