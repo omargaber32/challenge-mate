@@ -231,14 +231,14 @@
 /* ── MINIMAL DARK (clean · neutral) ─────────────────────────────────── */
 [data-theme="minimal-dark"] {
   color-scheme: dark;
-  --t-ink-950: #0a0a0a;
-  --t-ink-900: #111111;
-  --t-ink-850: #1a1a1a;
-  --t-ink-800: #222222;
-  --t-ink-700: #2a2a2a;
-  --t-ink-600: #3a3a3a;
-  --t-ink-500: #4a4a4a;
-  --t-ink-400: #5a5a5a;
+  --t-ink-950: #0f0f0f;
+  --t-ink-900: #171717;
+  --t-ink-850: #1f1f1f;
+  --t-ink-800: #262626;
+  --t-ink-700: #333333;
+  --t-ink-600: #404040;
+  --t-ink-500: #525252;
+  --t-ink-400: #666666;
   --t-bone-100: #fafafa;
   --t-bone-300: #e5e5e5;
   --t-bone-500: #a3a3a3;
