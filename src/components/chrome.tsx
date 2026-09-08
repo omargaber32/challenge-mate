@@ -18,6 +18,8 @@ export const THEMES: ThemeDef[] = [
   { id: "paper", name: "Paper", blurb: "Light & minimal", swatch: ["#f5f3ea", "#ef6a20"] },
   { id: "ocean", name: "Ocean", blurb: "Deep-water teal", swatch: ["#0a1420", "#1fa895"] },
   { id: "rose", name: "Rosé", blurb: "Warm plum dusk", swatch: ["#191017", "#e04e76"] },
+  { id: "minimal-dark", name: "Minimal Dark", blurb: "Clean & neutral", swatch: ["#0a0a0a", "#737373"] },
+  { id: "minimal-light", name: "Minimal Light", blurb: "Clean & neutral", swatch: ["#ffffff", "#737373"] },
 ];
 
 export const THEME_KEY = "cm_theme";
