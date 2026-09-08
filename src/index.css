@@ -1,74 +1,269 @@
 @import "tailwindcss";
 
+/*
+ * Theme system
+ * ────────────
+ * Tailwind tokens (--color-*) point at raw variables (--t-*) that each theme
+ * redefines. Utilities emit `var(--color-x)`, so flipping `data-theme` on
+ * <html> re-skins the whole app instantly.
+ */
+
 @theme {
   --font-display: "Bricolage Grotesque", "Instrument Sans", ui-sans-serif, sans-serif;
   --font-body: "Instrument Sans", "Segoe UI", ui-sans-serif, sans-serif;
 
-  --color-ink-950: #070d0a;
-  --color-ink-900: #0b120e;
-  --color-ink-850: #0f1813;
-  --color-ink-800: #142019;
-  --color-ink-700: #1a2a21;
-  --color-ink-600: #24382c;
-  --color-ink-500: #31493a;
-  --color-ink-400: #47614f;
+  --color-ink-950: var(--t-ink-950);
+  --color-ink-900: var(--t-ink-900);
+  --color-ink-850: var(--t-ink-850);
+  --color-ink-800: var(--t-ink-800);
+  --color-ink-700: var(--t-ink-700);
+  --color-ink-600: var(--t-ink-600);
+  --color-ink-500: var(--t-ink-500);
+  --color-ink-400: var(--t-ink-400);
 
-  --color-bone-100: #f2eddd;
-  --color-bone-300: #d8d6c4;
-  --color-bone-500: #a7b0a0;
-  --color-bone-600: #83918a;
+  --color-bone-100: var(--t-bone-100);
+  --color-bone-300: var(--t-bone-300);
+  --color-bone-500: var(--t-bone-500);
+  --color-bone-600: var(--t-bone-600);
 
-  --color-ember-300: #ffc591;
-  --color-ember-400: #ff9e57;
-  --color-ember-500: #ff7a33;
-  --color-ember-600: #ee5f1b;
-  --color-ember-700: #c94a10;
+  --color-ember-300: var(--t-ember-300);
+  --color-ember-400: var(--t-ember-400);
+  --color-ember-500: var(--t-ember-500);
+  --color-ember-600: var(--t-ember-600);
+  --color-ember-700: var(--t-ember-700);
 
-  --color-leaf-300: #9be3b4;
-  --color-leaf-400: #6fd394;
-  --color-leaf-500: #47b874;
-  --color-leaf-600: #2e985b;
+  --color-leaf-300: var(--t-leaf-300);
+  --color-leaf-400: var(--t-leaf-400);
+  --color-leaf-500: var(--t-leaf-500);
+  --color-leaf-600: var(--t-leaf-600);
 
-  --color-gold-300: #f3d794;
-  --color-gold-400: #eac26b;
-  --color-gold-500: #d9a93f;
+  --color-gold-300: var(--t-gold-300);
+  --color-gold-400: var(--t-gold-400);
+  --color-gold-500: var(--t-gold-500);
 
-  --color-coral-300: #f9a295;
-  --color-coral-400: #f58374;
-  --color-coral-500: #e85d4e;
+  --color-coral-300: var(--t-coral-300);
+  --color-coral-400: var(--t-coral-400);
+  --color-coral-500: var(--t-coral-500);
+
+  /* text that sits on solid accent buttons — flips per theme */
+  --color-onaccent: var(--t-onaccent);
+  /* modal / overlay dim */
+  --color-scrim: var(--t-scrim);
+}
+
+/* ── EMBER (default · dark) ─────────────────────────────────────────── */
+:root,
+[data-theme="ember"] {
+  color-scheme: dark;
+  --t-ink-950: #070d0a;
+  --t-ink-900: #0b120e;
+  --t-ink-850: #0f1813;
+  --t-ink-800: #142019;
+  --t-ink-700: #1a2a21;
+  --t-ink-600: #24382c;
+  --t-ink-500: #31493a;
+  --t-ink-400: #47614f;
+  --t-bone-100: #f2eddd;
+  --t-bone-300: #d8d6c4;
+  --t-bone-500: #a7b0a0;
+  --t-bone-600: #83918a;
+  --t-ember-300: #ffc591;
+  --t-ember-400: #ff9e57;
+  --t-ember-500: #ff7a33;
+  --t-ember-600: #ee5f1b;
+  --t-ember-700: #c94a10;
+  --t-leaf-300: #9be3b4;
+  --t-leaf-400: #6fd394;
+  --t-leaf-500: #47b874;
+  --t-leaf-600: #2e985b;
+  --t-gold-300: #f3d794;
+  --t-gold-400: #eac26b;
+  --t-gold-500: #d9a93f;
+  --t-coral-300: #f9a295;
+  --t-coral-400: #f58374;
+  --t-coral-500: #e85d4e;
+  --t-onaccent: #0b120e;
+  --t-scrim: rgba(3, 7, 5, 0.78);
+  --amb-a: rgba(255, 122, 51, 0.14);
+  --amb-b: rgba(71, 184, 116, 0.12);
+  --amb-c: rgba(234, 194, 107, 0.07);
+  --amb-base-1: #0a110d;
+  --amb-base-2: #070d0a;
+  --amb-base-3: #060b08;
+  --vig: rgba(0, 0, 0, 0.5);
+  --dot-1: #ffc591;
+  --dot-2: #ff7a33;
+  --picker: invert(0.85) sepia(0.2);
+}
+
+/* ── PAPER (light · minimal) ────────────────────────────────────────── */
+[data-theme="paper"] {
+  color-scheme: light;
+  --t-ink-950: #f5f3ea;
+  --t-ink-900: #eeebe0;
+  --t-ink-850: #fbfaf4;
+  --t-ink-800: #e8e4d6;
+  --t-ink-700: #ddd8c7;
+  --t-ink-600: #cdc7b3;
+  --t-ink-500: #b2ab95;
+  --t-ink-400: #8f8871;
+  --t-bone-100: #221d12;
+  --t-bone-300: #4c4636;
+  --t-bone-500: #6f6955;
+  --t-bone-600: #8b8471;
+  --t-ember-300: #a33a06;
+  --t-ember-400: #d95312;
+  --t-ember-500: #ef6a20;
+  --t-ember-600: #d95312;
+  --t-ember-700: #b23f0a;
+  --t-leaf-300: #1e6e43;
+  --t-leaf-400: #2c8a55;
+  --t-leaf-500: #38a065;
+  --t-leaf-600: #2c8a55;
+  --t-gold-300: #85611a;
+  --t-gold-400: #a17a1f;
+  --t-gold-500: #bd922d;
+  --t-coral-300: #b23a2e;
+  --t-coral-400: #cf4a3a;
+  --t-coral-500: #dd5646;
+  --t-onaccent: #fff7ec;
+  --t-scrim: rgba(46, 38, 24, 0.5);
+  --amb-a: rgba(239, 106, 32, 0.09);
+  --amb-b: rgba(56, 160, 101, 0.09);
+  --amb-c: rgba(189, 146, 45, 0.07);
+  --amb-base-1: #f7f5ec;
+  --amb-base-2: #f5f3ea;
+  --amb-base-3: #f1eee3;
+  --vig: rgba(120, 100, 60, 0.08);
+  --dot-1: #eec289;
+  --dot-2: #e29d55;
+  --picker: none;
+}
+
+/* ── OCEAN (dark · cool) ────────────────────────────────────────────── */
+[data-theme="ocean"] {
+  color-scheme: dark;
+  --t-ink-950: #060d14;
+  --t-ink-900: #0a1420;
+  --t-ink-850: #0e1a29;
+  --t-ink-800: #142235;
+  --t-ink-700: #1b2e45;
+  --t-ink-600: #25405e;
+  --t-ink-500: #335577;
+  --t-ink-400: #4a6d8f;
+  --t-bone-100: #eaf1f5;
+  --t-bone-300: #c2d2dc;
+  --t-bone-500: #8ba3b2;
+  --t-bone-600: #6d8698;
+  --t-ember-300: #86ded0;
+  --t-ember-400: #45c4b1;
+  --t-ember-500: #1fa895;
+  --t-ember-600: #178a7a;
+  --t-ember-700: #0f6e61;
+  --t-leaf-300: #a3e6ac;
+  --t-leaf-400: #67cf7b;
+  --t-leaf-500: #42b95c;
+  --t-leaf-600: #319c4a;
+  --t-gold-300: #f0d18a;
+  --t-gold-400: #e4b95f;
+  --t-gold-500: #cf9f3c;
+  --t-coral-300: #f9a295;
+  --t-coral-400: #f58374;
+  --t-coral-500: #e85d4e;
+  --t-onaccent: #04110f;
+  --t-scrim: rgba(2, 6, 12, 0.78);
+  --amb-a: rgba(31, 168, 149, 0.15);
+  --amb-b: rgba(66, 185, 92, 0.1);
+  --amb-c: rgba(207, 159, 60, 0.06);
+  --amb-base-1: #081120;
+  --amb-base-2: #060d14;
+  --amb-base-3: #050b11;
+  --vig: rgba(0, 0, 0, 0.55);
+  --dot-1: #9fe8dd;
+  --dot-2: #1fa895;
+  --picker: invert(0.85) sepia(0.2) hue-rotate(130deg);
+}
+
+/* ── ROSÉ (dark · warm plum) ────────────────────────────────────────── */
+[data-theme="rose"] {
+  color-scheme: dark;
+  --t-ink-950: #120b11;
+  --t-ink-900: #191017;
+  --t-ink-850: #20141e;
+  --t-ink-800: #2a1b28;
+  --t-ink-700: #392536;
+  --t-ink-600: #4d3247;
+  --t-ink-500: #63445b;
+  --t-ink-400: #7d5b72;
+  --t-bone-100: #f6edf0;
+  --t-bone-300: #dcc7cf;
+  --t-bone-500: #ab8f9d;
+  --t-bone-600: #8d7283;
+  --t-ember-300: #f7a6ba;
+  --t-ember-400: #ef7495;
+  --t-ember-500: #e04e76;
+  --t-ember-600: #c93d63;
+  --t-ember-700: #a52f4e;
+  --t-leaf-300: #a9e3c0;
+  --t-leaf-400: #74cd98;
+  --t-leaf-500: #4cb37b;
+  --t-leaf-600: #3a9764;
+  --t-gold-300: #f2d9a6;
+  --t-gold-400: #e8c37e;
+  --t-gold-500: #d4a955;
+  --t-coral-300: #f9a295;
+  --t-coral-400: #f58374;
+  --t-coral-500: #e85d4e;
+  --t-onaccent: #180a10;
+  --t-scrim: rgba(10, 4, 9, 0.78);
+  --amb-a: rgba(224, 78, 118, 0.15);
+  --amb-b: rgba(76, 179, 123, 0.09);
+  --amb-c: rgba(212, 169, 85, 0.07);
+  --amb-base-1: #160d14;
+  --amb-base-2: #120b11;
+  --amb-base-3: #100a0f;
+  --vig: rgba(0, 0, 0, 0.55);
+  --dot-1: #f9b3c5;
+  --dot-2: #e04e76;
+  --picker: invert(0.85) sepia(0.2) hue-rotate(-40deg);
 }
 
 html,
 body {
   margin: 0;
-  background: #070d0a;
-  color: #f2eddd;
+  background: var(--color-ink-950);
+  color: var(--color-bone-100);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   min-height: 100%;
 }
 
 ::selection {
-  background: rgba(255, 122, 51, 0.35);
+  background: color-mix(in srgb, var(--color-ember-500) 40%, transparent);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #24382c transparent;
+  scrollbar-color: var(--color-ink-600) transparent;
 }
 *::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 *::-webkit-scrollbar-thumb {
-  background: #24382c;
+  background: var(--color-ink-600);
   border-radius: 999px;
 }
 
 input[type="time"]::-webkit-calendar-picker-indicator,
 input[type="date"]::-webkit-calendar-picker-indicator {
-  filter: invert(0.85) sepia(0.2);
+  filter: var(--picker);
   cursor: pointer;
+}
+
+select option {
+  background: var(--t-ink-900);
+  color: var(--t-bone-100);
 }
 
 /* ---------- keyframes ---------- */
@@ -240,9 +435,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   position: absolute;
   bottom: -4vh;
   border-radius: 999px;
-  background: radial-gradient(circle, #ffc591 0%, #ff7a33 55%, transparent 75%);
+  background: radial-gradient(circle, var(--dot-1) 0%, var(--dot-2) 55%, transparent 75%);
   animation: ember-rise linear infinite;
   will-change: transform, opacity;
+}
+
+.ambient-grad {
+  background:
+    radial-gradient(52rem 36rem at 85% -8%, var(--amb-a), transparent 62%),
+    radial-gradient(46rem 34rem at -12% 108%, var(--amb-b), transparent 60%),
+    radial-gradient(30rem 22rem at 12% 18%, var(--amb-c), transparent 65%),
+    linear-gradient(180deg, var(--amb-base-1) 0%, var(--amb-base-2) 55%, var(--amb-base-3) 100%);
+}
+.ambient-vig {
+  background: radial-gradient(120rem 60rem at 50% 120%, transparent 55%, var(--vig));
 }
 
 .noise-layer {
@@ -276,8 +482,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 }
 .card-lift:hover {
   transform: translateY(-3px);
-  border-color: #47614f;
-  box-shadow: 0 14px 34px -18px rgba(0, 0, 0, 0.8);
+  border-color: var(--color-ink-400);
+  box-shadow: 0 14px 34px -18px rgba(0, 0, 0, 0.45);
 }
 
 .stagger > * {

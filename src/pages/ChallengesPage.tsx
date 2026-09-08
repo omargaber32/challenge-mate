@@ -81,7 +81,7 @@ export default function ChallengesPage({ user, onOpen }: { user: User; onOpen: (
       <header className="flex items-end justify-between gap-3 pt-1">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-bone-600">Discover · enroll · manage</p>
-          <h1 className="font-display mt-1 text-[26px] font-extrabold tracking-tight text-bone-100">Challenges</h1>
+          <h1 className="font-display mt-1 text-[26px] font-extrabold tracking-tight text-bone-100 md:text-[32px]">Challenges</h1>
         </div>
         <button onClick={() => setShowCreate(true)} className={btnSolid} style={{ paddingInline: 14 }}>
           <PlusIcon className="h-4 w-4" /> Create
@@ -125,7 +125,7 @@ export default function ChallengesPage({ user, onOpen }: { user: User; onOpen: (
                     onClick={() => answerInvite(inv, true)}
                     disabled={busy}
                     aria-label="Accept invite"
-                    className="rounded-[10px] bg-leaf-500 p-2 text-ink-950 transition hover:bg-leaf-400 active:scale-95 disabled:opacity-40"
+                    className="rounded-[10px] bg-leaf-500 p-2 text-onaccent transition hover:bg-leaf-400 active:scale-95 disabled:opacity-40"
                   >
                     <CheckIcon className="h-4 w-4" />
                   </button>
@@ -144,7 +144,7 @@ export default function ChallengesPage({ user, onOpen }: { user: User; onOpen: (
         </section>
       )}
 
-      <section className="space-y-4">
+      <section className="space-y-4 md:grid md:grid-cols-2 md:items-start md:gap-4 md:space-y-0">
         {!data && (
           <div className={`${cardCls} animate-pulse p-5`}>
             <div className="h-11 w-2/3 rounded-lg bg-ink-700" />
@@ -227,7 +227,7 @@ export default function ChallengesPage({ user, onOpen }: { user: User; onOpen: (
           </Reveal>
         ))}
         {data && visible.length === 0 && (
-          <p className="py-10 text-center text-sm font-semibold text-bone-600">Nothing in this view yet.</p>
+          <p className="py-10 text-center text-sm font-semibold text-bone-600 md:col-span-2">Nothing in this view yet.</p>
         )}
       </section>
 
@@ -253,7 +253,7 @@ export default function ChallengesPage({ user, onOpen }: { user: User; onOpen: (
                   type="checkbox"
                   checked={accepted}
                   onChange={(e) => setAccepted(e.target.checked)}
-                  className="mt-0.5 h-4.5 w-4.5 accent-[#FF7A33]"
+                  className="mt-0.5 h-4.5 w-4.5 accent-(--color-ember-500)"
                   style={{ width: 18, height: 18 }}
                 />
                 <span className="text-[13.5px] font-semibold leading-relaxed text-bone-300">
@@ -434,7 +434,7 @@ function CreateModal({ user, onClose, onCreated }: { user: User; onClose: () => 
         <label className={`flex cursor-pointer items-start gap-3 rounded-[12px] border p-3.5 transition ${hidden ? "border-gold-500/50 bg-gold-400/10" : "border-ink-600 bg-ink-900 hover:border-ink-500"}`}>
           <input
             type="checkbox"
-            className="mt-0.5 h-4 w-4 accent-[#EAC26B]"
+            className="mt-0.5 h-4 w-4 accent-(--color-gold-400)"
             checked={hidden}
             onChange={(e) => setHidden(e.target.checked)}
           />

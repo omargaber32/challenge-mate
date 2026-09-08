@@ -13,6 +13,13 @@
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300..800&family=Instrument+Sans:ital,wght@0,400..700;1,400..600&display=swap"
       rel="stylesheet"
     />
+    <script>
+      /* apply the saved theme before first paint (no flash) */
+      try {
+        var t = localStorage.getItem("cm_theme");
+        if (t) document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

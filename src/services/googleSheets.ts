@@ -1,14 +1,13 @@
 /**
- * Google Sheets transport.
+ * Cloudflare D1 transport.
  *
  * Topology:
- *   Frontend (GitHub Pages) ──HTTPS──▶ Cloudflare Worker ──Google Sheets REST──▶ Google Sheet
+ *   Frontend (GitHub Pages) ──HTTPS──▶ Cloudflare Worker ──▶ Cloudflare D1 (SQLite)
  *
- * The Sheet is the database. A Cloudflare Worker (`backend/worker.js`, pure
- * fetch + Web Crypto, no Node.js) exposes it as a tiny JSON RPC API using a
- * service account, so end users never need Google sign-in (README §2). The
- * browser posts `{action, payload}` and receives the same view-models the
- * local engine returns.
+ * The D1 database is the database. A Cloudflare Worker (`backend/worker.js`)
+ * exposes it as a tiny JSON RPC API, so end users never need Google sign-in
+ * (README §2). The browser posts `{action, payload}` and receives the same
+ * view-models the local engine returns.
  *
  * `rpc` uses `Content-Type: text/plain` deliberately: it makes the request
  * "simple", so no CORS preflight is needed at all.
@@ -31,11 +30,11 @@ import type {
 /**
  * ⬇ PASTE YOUR CLOUDFLARE WORKER URL HERE ⬇
  *
- * The URL you get after `npx wrangler deploy backend/worker.js`, e.g.
+ * The URL you get after `npx wrangler deploy`, e.g.
  *   "https://challengemate.your-subdomain.workers.dev"
  *
  * While this is empty, the app runs the built-in local demo engine and
- * stores data in the browser — set the URL to make Google Sheets (via the
+ * stores data in the browser — set the URL to make Cloudflare D1 (via the
  * Worker) the real database. Only the login session is ever stored locally.
  */
 export const SHEETS_API_URL = "https://challenge-mate.omar-gaber323.workers.dev/";

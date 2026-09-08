@@ -204,7 +204,7 @@ export default function ChallengeDetailPage({
                 <Icon className="h-6 w-6" />
               </span>
               <div>
-                <h1 className="font-display text-[22px] font-extrabold leading-tight text-bone-100">{ch.name}</h1>
+                <h1 className="font-display text-[22px] font-extrabold leading-tight text-bone-100 md:text-[27px]">{ch.name}</h1>
                 <p className="mt-0.5 text-xs font-semibold text-bone-600">{fmtRange(ch.start_date, ch.end_date)}</p>
               </div>
             </div>
@@ -291,7 +291,7 @@ export default function ChallengeDetailPage({
             <p className="font-display text-lg font-bold text-bone-100">You’re not in this one yet</p>
             <p className="mt-1 text-sm text-bone-500">Read the rules above, accept them, and jump in.</p>
             <label className="mt-4 flex cursor-pointer items-start gap-3">
-              <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#FF7A33]" />
+              <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} className="mt-0.5 h-4 w-4 accent-(--color-ember-500)" />
               <span className="text-[13.5px] font-semibold text-bone-300">I have read and accept the rules.</span>
             </label>
             <div className="mt-4 grid grid-cols-2 gap-2.5">
@@ -514,8 +514,8 @@ export default function ChallengeDetailPage({
               <button
                 className={`inline-flex items-center justify-center gap-2 rounded-[10px] px-4 py-3 text-sm font-bold transition active:scale-[0.97] disabled:pointer-events-none disabled:opacity-40 ${
                   confirmKind === "delete"
-                    ? "bg-coral-500 text-ink-950 hover:bg-coral-400"
-                    : "bg-gold-400 text-ink-950 hover:bg-gold-300"
+                    ? "bg-coral-500 text-onaccent hover:bg-coral-400"
+                    : "bg-gold-400 text-onaccent hover:bg-gold-300"
                 }`}
                 onClick={runConfirm}
                 disabled={busy || typedName !== data.challenge.name}
@@ -554,7 +554,7 @@ export default function ChallengeDetailPage({
                 <label key={p.user_id} className="flex cursor-pointer items-center gap-3">
                   <input
                     type="checkbox"
-                    className="h-4 w-4 accent-[#FF7A33]"
+                    className="h-4 w-4 accent-(--color-ember-500)"
                     checked={notifySel.includes(p.user_id)}
                     onChange={(e) =>
                       setNotifySel((v) => (e.target.checked ? [...v, p.user_id] : v.filter((x) => x !== p.user_id)))
@@ -600,10 +600,9 @@ export default function ChallengeDetailPage({
                 {data.pendingInvites.map((u) => (
                   <label key={u.user_id} className="flex cursor-pointer items-center gap-3">
                     <input
-                      type="checkbox"
-                      className="h-4 w-4 accent-[#FF7A33]"
-                      checked={inviteSel.includes(u.user_id)}
-                      onChange={(e) =>
+                    type="checkbox"
+                    className="h-4 w-4 accent-(--color-ember-500)"
+                    checked={inviteSel.includes(u.user_id)}                      onChange={(e) =>
                         setInviteSel((v) => (e.target.checked ? [...v, u.user_id] : v.filter((x) => x !== u.user_id)))
                       }
                     />
@@ -636,7 +635,7 @@ export default function ChallengeDetailPage({
               Stay
             </button>
             <button
-              className="inline-flex items-center justify-center rounded-[10px] bg-coral-500 px-4 py-3 text-sm font-bold text-ink-950 transition hover:bg-coral-400 active:scale-[0.97] disabled:opacity-40"
+              className="inline-flex items-center justify-center rounded-[10px] bg-coral-500 px-4 py-3 text-sm font-bold text-onaccent transition hover:bg-coral-400 active:scale-[0.97] disabled:opacity-40"
               onClick={runLeave}
               disabled={busy}
             >
